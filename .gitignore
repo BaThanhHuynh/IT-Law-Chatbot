@@ -1,0 +1,20 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Data / Large Files
+*.xlsx
+*.docx
+*.jsonl
+law_crawler/data/
+*.txt
+
+# IDE
+.vscode/
+
+# Ignore database files if any
+*.sqlite3
+*.db
