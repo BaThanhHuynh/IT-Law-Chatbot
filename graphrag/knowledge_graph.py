@@ -1,157 +1,126 @@
 """
 Knowledge Graph engine for hybrid search (vector + graph traversal).
-Loads graph from MySQL and enables multi-hop reasoning.
+Uses LangChain Neo4jGraph and Cypher queries.
 """
-from collections import defaultdict
-from db import fetch_all
+from config import Config
 from rag.retriever import vector_search
-from rag.embeddings import get_embedding, cosine_similarity, deserialize_embedding
-
+from langchain_neo4j import Neo4jGraph
+from neo4j import GraphDatabase
 
 class KnowledgeGraph:
-    """In-memory knowledge graph loaded from MySQL."""
+    """Knowledge graph loaded from Neo4j."""
 
     def __init__(self):
-        self.entities = {}          # entity_id -> entity data
-        self.adjacency = defaultdict(list)  # entity_id -> [(target_id, rel_type, desc)]
-        self.reverse_adj = defaultdict(list)  # reverse adjacency
-        self._loaded = False
+        self._graph = None
 
-    def load_from_db(self):
-        """Load the full knowledge graph from MySQL."""
-        # Load entities
-        entity_rows = fetch_all("SELECT * FROM kg_entities")
-        for row in entity_rows:
-            self.entities[row["entity_id"]] = {
-                "id": row["id"],
-                "entity_id": row["entity_id"],
-                "name": row["name"],
-                "entity_type": row["entity_type"],
-                "description": row.get("description", ""),
-                "chunk_id": row.get("chunk_id"),
-            }
-
-        # Load relationships
-        rel_rows = fetch_all("SELECT * FROM kg_relationships")
-        for row in rel_rows:
-            self.adjacency[row["source_entity_id"]].append({
-                "target": row["target_entity_id"],
-                "type": row["relationship_type"],
-                "description": row.get("description", ""),
-                "weight": row.get("weight", 1.0),
-            })
-            self.reverse_adj[row["target_entity_id"]].append({
-                "target": row["source_entity_id"],
-                "type": row["relationship_type"],
-                "description": row.get("description", ""),
-                "weight": row.get("weight", 1.0),
-            })
-
-        self._loaded = True
-        print(f"[KG] Loaded {len(self.entities)} entities and {len(rel_rows)} relationships.")
-
-    def ensure_loaded(self):
-        """Ensure graph is loaded."""
-        if not self._loaded:
-            self.load_from_db()
-
-    def get_entity(self, entity_id: str) -> dict:
-        """Get entity by ID."""
-        self.ensure_loaded()
-        return self.entities.get(entity_id)
-
-    def get_related_entities(self, entity_id: str, depth: int = 2) -> list:
-        """
-        Multi-hop traversal: get all entities within N hops.
-        Returns list of (entity, relationship_type, distance) tuples.
-        """
-        self.ensure_loaded()
-        visited = set()
-        results = []
-        queue = [(entity_id, 0, None)]
-
-        while queue:
-            current_id, current_depth, rel_type = queue.pop(0)
-
-            if current_id in visited or current_depth > depth:
-                continue
-            visited.add(current_id)
-
-            entity = self.entities.get(current_id)
-            if entity and current_depth > 0:
-                results.append({
-                    "entity": entity,
-                    "relationship": rel_type,
-                    "distance": current_depth,
-                })
-
-            if current_depth < depth:
-                # Forward edges
-                for edge in self.adjacency.get(current_id, []):
-                    if edge["target"] not in visited:
-                        queue.append((edge["target"], current_depth + 1, edge["type"]))
-                # Reverse edges
-                for edge in self.reverse_adj.get(current_id, []):
-                    if edge["target"] not in visited:
-                        queue.append((edge["target"], current_depth + 1, edge["type"]))
-
-        return results
+    @property
+    def graph(self):
+        if self._graph is None:
+            self._graph = Neo4jGraph(
+                url=Config.NEO4J_URI,
+                username=Config.NEO4J_USERNAME,
+                password=Config.NEO4J_PASSWORD,
+                enhanced_schema=False
+            )
+        return self._graph
 
     def search_entities(self, query: str, top_k: int = 5) -> list:
-        """Search entities by name similarity."""
-        self.ensure_loaded()
-        query_lower = query.lower()
+        """Search entities by name/description using full-text index or CONTAINS."""
+        # Split query into words to match
+        words = [w.lower() for w in query.split() if len(w) >= 2]
+        if not words:
+            return []
 
+        # A basic keyword match Cypher query
+        cypher = """
+        MATCH (n:Entity)
+        WHERE any(word in $words WHERE toLower(n.name) CONTAINS word OR toLower(n.description) CONTAINS word)
+        RETURN n.entity_id AS entity_id, n.name AS name, n.description AS description, labels(n) AS labels
+        LIMIT $top_k
+        """
+        
+        results = self.graph.query(cypher, params={"words": words, "top_k": top_k})
+        
         scored = []
-        for eid, entity in self.entities.items():
-            name_lower = entity["name"].lower()
-            desc_lower = (entity.get("description") or "").lower()
-
-            # Simple keyword match scoring
+        for r in results:
+            labels = [l for l in r.get("labels", []) if l != "Entity"]
+            entity_type = labels[0] if labels else "UNKNOWN"
+            
+            # Recompute a basic score for ranking
             score = 0
-            for word in query_lower.split():
-                if len(word) < 2:
-                    continue
-                if word in name_lower:
-                    score += 3
-                if word in desc_lower:
-                    score += 1
-
-            if score > 0:
-                scored.append({"entity": entity, "score": score})
+            name_lower = r.get("name", "").lower()
+            desc_lower = r.get("description", "").lower()
+            for w in words:
+                if w in name_lower: score += 3
+                if w in desc_lower: score += 1
+                
+            scored.append({
+                "entity": {
+                    "entity_id": r["entity_id"],
+                    "name": r["name"],
+                    "description": r["description"],
+                    "entity_type": entity_type
+                },
+                "score": score
+            })
 
         scored.sort(key=lambda x: x["score"], reverse=True)
-        return scored[:top_k]
+        return scored
 
     def get_graph_context(self, entity_ids: list, depth: int = 1) -> str:
         """
         Build context string from graph traversal starting from given entities.
         """
-        self.ensure_loaded()
+        if not entity_ids:
+            return ""
+
+        # Query up to 2 hops from the starting entities
+        # Note: Cypher paths length can be dynamic but for simple RAG, depth 1-2 is enough.
+        cypher = f"""
+        MATCH (start:Entity)-[r*1..{depth}]-(target:Entity)
+        WHERE start.entity_id IN $entity_ids
+        RETURN start.name AS start_name, 
+               [l IN labels(start) WHERE l <> 'Entity'][0] AS start_type,
+               start.description AS start_desc,
+               target.name AS target_name, 
+               [l IN labels(target) WHERE l <> 'Entity'][0] AS target_type,
+               type(r[-1]) AS rel_type
+        LIMIT 50
+        """
+        
+        results = self.graph.query(cypher, params={"entity_ids": entity_ids})
+        
+        if not results:
+            # Maybe just fetch the nodes themselves if no relationships
+            cypher_nodes = """
+            MATCH (n:Entity) WHERE n.entity_id IN $entity_ids
+            RETURN n.name AS name, [l IN labels(n) WHERE l <> 'Entity'][0] AS type, n.description AS desc
+            """
+            nodes = self.graph.query(cypher_nodes, params={"entity_ids": entity_ids})
+            context = ""
+            for n in nodes:
+                context += f"[Entity: {n.get('name')}] (Loại: {n.get('type')})\n  {n.get('desc', '')[:200]}\n"
+            return context
+
         context_parts = []
-        seen = set()
+        seen_starts = set()
+        seen_edges = set()
 
-        for eid in entity_ids:
-            entity = self.get_entity(eid)
-            if not entity:
-                continue
-
-            if eid not in seen:
-                seen.add(eid)
+        for r in results:
+            start_name = r["start_name"]
+            if start_name not in seen_starts:
+                seen_starts.add(start_name)
                 context_parts.append(
-                    f"[Entity: {entity['name']}] (Loại: {entity['entity_type']})\n"
-                    f"  {entity.get('description', '')[:200]}"
+                    f"[Entity: {start_name}] (Loại: {r['start_type']})\n"
+                    f"  {r.get('start_desc', '')[:200]}"
                 )
-
-            related = self.get_related_entities(eid, depth=depth)
-            for r in related:
-                rel_entity = r["entity"]
-                if rel_entity["entity_id"] not in seen:
-                    seen.add(rel_entity["entity_id"])
-                    context_parts.append(
-                        f"  → [{r['relationship']}] {rel_entity['name']} "
-                        f"(Loại: {rel_entity['entity_type']})"
-                    )
+            
+            edge_key = f"{start_name}-{r['rel_type']}-{r['target_name']}"
+            if edge_key not in seen_edges:
+                seen_edges.add(edge_key)
+                context_parts.append(
+                    f"  → [{r['rel_type']}] {r['target_name']} (Loại: {r['target_type']})"
+                )
 
         return "\n".join(context_parts)
 
@@ -159,51 +128,52 @@ class KnowledgeGraph:
         """
         Get graph data (nodes + edges) for frontend visualization.
         """
-        self.ensure_loaded()
-        nodes = []
-        edges = []
-        node_ids = set()
+        nodes_dict = {}
+        edges_list = []
 
-        if entity_ids is None:
-            # Return all VAN_BAN + DIEU_LUAT entities with their direct connections
-            entity_ids = [
-                eid for eid, e in self.entities.items()
-                if e["entity_type"] in ("VAN_BAN", "DIEU_LUAT", "CHUONG")
-            ][:50]  # Limit for performance
+        if not entity_ids:
+            # Default visualization: Fetch a subset of the graph
+            cypher = """
+            MATCH (n)-[r]->(m)
+            WHERE ('VAN_BAN' IN labels(n) OR 'DIEU_LUAT' IN labels(n) OR 'CHUONG' IN labels(n))
+            RETURN n.entity_id AS source_id, n.name AS source_name, [l IN labels(n) WHERE l <> 'Entity'][0] AS source_type,
+                   m.entity_id AS target_id, m.name AS target_name, [l IN labels(m) WHERE l <> 'Entity'][0] AS target_type,
+                   type(r) AS rel_type, r.description AS rel_desc
+            LIMIT 50
+            """
+            results = self.graph.query(cypher)
+        else:
+            cypher = f"""
+            MATCH (n)-[r*1..{depth}]-(m)
+            WHERE n.entity_id IN $entity_ids
+            WITH n, r[-1] as last_rel, m
+            RETURN n.entity_id AS source_id, n.name AS source_name, [l IN labels(n) WHERE l <> 'Entity'][0] AS source_type,
+                   m.entity_id AS target_id, m.name AS target_name, [l IN labels(m) WHERE l <> 'Entity'][0] AS target_type,
+                   type(last_rel) AS rel_type, last_rel.description AS rel_desc
+            LIMIT 100
+            """
+            results = self.graph.query(cypher, params={"entity_ids": entity_ids})
 
-        for eid in entity_ids:
-            entity = self.get_entity(eid)
-            if entity and eid not in node_ids:
-                node_ids.add(eid)
-                nodes.append({
-                    "id": eid,
-                    "label": entity["name"][:50],
-                    "type": entity["entity_type"],
-                })
+        for r in results:
+            sid = r["source_id"]
+            if sid not in nodes_dict:
+                nodes_dict[sid] = {"id": sid, "label": r.get("source_name", "")[:50], "type": r.get("source_type")}
+                
+            tid = r["target_id"]
+            if tid not in nodes_dict:
+                nodes_dict[tid] = {"id": tid, "label": r.get("target_name", "")[:50], "type": r.get("target_type")}
+                
+            edges_list.append({
+                "source": sid,
+                "target": tid,
+                "type": r["rel_type"],
+                "label": r.get("rel_desc", "")[:30]
+            })
 
-            for edge in self.adjacency.get(eid, []):
-                target = self.get_entity(edge["target"])
-                if target and edge["target"] not in node_ids:
-                    node_ids.add(edge["target"])
-                    nodes.append({
-                        "id": edge["target"],
-                        "label": target["name"][:50],
-                        "type": target["entity_type"],
-                    })
-                if target:
-                    edges.append({
-                        "source": eid,
-                        "target": edge["target"],
-                        "type": edge["type"],
-                        "label": edge.get("description", "")[:30],
-                    })
-
-        return {"nodes": nodes, "edges": edges}
-
+        return {"nodes": list(nodes_dict.values()), "edges": edges_list}
 
 # Singleton instance
 _kg_instance = None
-
 
 def get_knowledge_graph() -> KnowledgeGraph:
     """Get singleton KnowledgeGraph instance."""
@@ -223,7 +193,11 @@ def hybrid_search(query: str, top_k: int = 5) -> dict:
 
     # 2. Knowledge graph search for related entities
     kg = get_knowledge_graph()
-    kg_results = kg.search_entities(query, top_k=3)
+    try:
+        kg_results = kg.search_entities(query, top_k=3)
+    except Exception as e:
+        print(f"[KG Error] Failed to search entities: {e}")
+        kg_results = []
 
     # 3. Expand graph context from matched entities
     matched_entity_ids = [r["entity"]["entity_id"] for r in kg_results]
@@ -239,8 +213,17 @@ def hybrid_search(query: str, top_k: int = 5) -> dict:
                 if article_entity_id not in matched_entity_ids:
                     matched_entity_ids.append(article_entity_id)
 
-    graph_context = kg.get_graph_context(matched_entity_ids, depth=2)
-    graph_data = kg.get_graph_data_for_visualization(matched_entity_ids, depth=1)
+    try:
+        if matched_entity_ids:
+            graph_context = kg.get_graph_context(matched_entity_ids, depth=2)
+            graph_data = kg.get_graph_data_for_visualization(matched_entity_ids, depth=1)
+        else:
+            graph_context = ""
+            graph_data = {"nodes": [], "edges": []}
+    except Exception as e:
+        print(f"[KG Error] Failed to get graph context: {e}")
+        graph_context = ""
+        graph_data = {"nodes": [], "edges": []}
 
     return {
         "vector_results": vector_results,

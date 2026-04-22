@@ -4,6 +4,7 @@ Chatbot engine: orchestrates RAG retrieval, graph context, and LLM generation.
 import json
 import uuid
 import google.generativeai as genai
+
 from config import Config
 from db import execute_query, fetch_all, fetch_one
 from rag.retriever import get_context_from_results
@@ -12,7 +13,6 @@ from chatbot.prompts import SYSTEM_PROMPT, RAG_PROMPT_TEMPLATE, TITLE_PROMPT
 
 # Configure Gemini
 _model = None
-
 
 def get_llm():
     """Get or initialize Gemini model."""
@@ -69,7 +69,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             "parts": [msg["content"]],
         })
 
-    # 6. Call Gemini API
+    # 6. Call Gemini API directly
     try:
         model = get_llm()
         chat = model.start_chat(history=chat_history)

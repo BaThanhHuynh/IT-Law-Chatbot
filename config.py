@@ -23,9 +23,14 @@ class Config:
         "database": MYSQL_DATABASE,
     }
 
-    # Flask
-    FLASK_PORT = int(os.getenv("FLASK_PORT", "5000"))
-    FLASK_DEBUG = os.getenv("FLASK_DEBUG", "true").lower() == "true"
+    # Neo4j
+    NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
+    NEO4J_USERNAME = os.getenv("NEO4J_USERNAME", "neo4j")
+    NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password")
+
+    # API Settings
+    API_PORT = int(os.getenv("API_PORT", "5000"))
+    API_DEBUG = os.getenv("API_DEBUG", "true").lower() == "true"
 
     # Embedding model
     EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
