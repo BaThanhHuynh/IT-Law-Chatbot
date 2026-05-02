@@ -8,8 +8,8 @@ class Config:
     # Gemini API
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
-    # Qdrant Database
-    QDRANT_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "qdrant_db")
+    # Qdrant Database Service
+    QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
     QDRANT_COLLECTION = "it_law_chunks"
 
     # Chat History (JSON)
@@ -25,7 +25,7 @@ class Config:
     API_DEBUG = os.getenv("API_DEBUG", "true").lower() == "true"
 
     # Embedding model
-    EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    EMBEDDING_MODEL = r"C:\law_final_model_v2"
     EMBEDDING_DIM = 384
 
     # RAG settings

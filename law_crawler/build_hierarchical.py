@@ -11,6 +11,7 @@ Thay vào đó: thêm trường "full_dieu_text" vào PAYLOAD của mỗi child 
 Với điều quá dài (> 4000 ký tự): cap parent ở 4000 ký tự + note "[Xem thêm...]"
 để tránh làm LLM context quá lớn.
 
+DE: Lục Sỹ Minh Hiền
 Cách dùng:
     python build_hierarchical.py \
         --chunks data/law_chunks.jsonl \

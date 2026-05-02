@@ -209,7 +209,6 @@ function appendMessage(role, content, sources = null) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${role}`;
 
-    const avatar = role === 'user' ? 'U' : '⚖️';
     const formattedContent = formatMessageContent(content);
 
     let sourcesHtml = '';
@@ -218,7 +217,7 @@ function appendMessage(role, content, sources = null) {
         if (parsedSources && parsedSources.length > 0) {
             sourcesHtml = `
                 <div class="message-sources">
-                    <div class="sources-title">📎 Nguồn tham chiếu</div>
+                    <div class="sources-title">Nguồn trích dẫn</div>
                     ${parsedSources.map(s => `
                         <div class="source-item">
                             <span>${escapeHtml(s.doc_title || '')} ${s.so_hieu ? '(' + escapeHtml(s.so_hieu) + ')' : ''} ${s.article ? '- ' + escapeHtml(s.article) : ''}</span>
@@ -229,10 +228,18 @@ function appendMessage(role, content, sources = null) {
         }
     }
 
+    const copyBtnHtml = role === 'assistant' ? `
+        <button class="btn-copy-msg" onclick="copyToClipboard(this)" title="Sao chép câu trả lời">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+        </button>
+    ` : '';
+
     msgDiv.innerHTML = `
-        <div class="message-avatar">${avatar}</div>
         <div class="message-body">
-            <div class="message-content">${formattedContent}</div>
+            <div class="message-content">
+                ${formattedContent}
+                ${copyBtnHtml}
+            </div>
             ${sourcesHtml}
         </div>
     `;
@@ -244,7 +251,6 @@ function showTypingIndicator() {
     const div = document.createElement('div');
     div.className = 'message assistant';
     div.innerHTML = `
-        <div class="message-avatar">⚖️</div>
         <div class="message-body">
             <div class="message-content">
                 <div class="typing-indicator">
@@ -442,6 +448,20 @@ function formatTime(dateStr) {
 
 function scrollToBottom() {
     requestAnimationFrame(() => {
-        chatArea.scrollTop = chatArea.scrollHeight;
+        chatArea.scrollTo({
+            top: chatArea.scrollHeight,
+            behavior: 'smooth'
+        });
+    });
+}
+
+function copyToClipboard(btn) {
+    const content = btn.closest('.message-content').innerText;
+    navigator.clipboard.writeText(content).then(() => {
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span style="font-size: 10px; color: var(--success)">Đã chép!</span>';
+        setTimeout(() => {
+            btn.innerHTML = originalHtml;
+        }, 2000);
     });
 }

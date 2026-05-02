@@ -45,11 +45,6 @@ async def list_conversations():
     """Get all conversations."""
     try:
         conversations = get_all_conversations()
-        # Convert datetime objects to strings
-        for conv in conversations:
-            for key in ["created_at", "updated_at"]:
-                if conv.get(key):
-                    conv[key] = conv[key].isoformat()
         return {"success": True, "data": conversations}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -71,8 +66,6 @@ async def get_conversation(conversation_id: str):
     try:
         messages = get_conversation_history(conversation_id)
         for msg in messages:
-            if msg.get("created_at"):
-                msg["created_at"] = msg["created_at"].isoformat()
             if msg.get("sources") and isinstance(msg["sources"], str):
                 msg["sources"] = json.loads(msg["sources"])
         return {"success": True, "data": messages}

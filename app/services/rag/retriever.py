@@ -9,7 +9,7 @@ _client = None
 def get_qdrant_client():
     global _client
     if _client is None:
-        _client = QdrantClient(path=Config.QDRANT_PATH)
+        _client = QdrantClient(url=Config.QDRANT_URL)
     return _client
 
 
@@ -34,6 +34,63 @@ def vector_search(query: str, top_k: int = None) -> list:
         logger.error(f"[Error] Qdrant search failed: {e}")
         return []
     
+    return _parse_qdrant_results(search_result)
+
+
+def multi_query_search(queries: list, top_k: int = None) -> list:
+    """
+    Multi-query retrieval: run multiple semantically diverse queries,
+    merge and deduplicate results by chunk_id, keeping the highest score.
+    
+    This ensures broader coverage across different legal documents
+    when a single query might only match one perspective.
+    
+    Args:
+        queries: List of query strings (original + LLM-generated variants)
+        top_k: Max results PER query (final result may be larger before truncation)
+    
+    Returns:
+        Merged, deduplicated, and sorted list of search results
+    """
+    top_k = top_k or Config.TOP_K_RESULTS
+    
+    # Collect all results, deduplicate by chunk_id (keep best score)
+    merged = {}  # key: chunk_id or (doc_title, dieu_so) -> result dict
+    
+    for query in queries:
+        try:
+            query_embedding = get_embedding(query)
+            client = get_qdrant_client()
+            response = client.query_points(
+                collection_name=Config.QDRANT_COLLECTION,
+                query=query_embedding.tolist(),
+                limit=top_k,
+                with_payload=True
+            )
+            
+            results = _parse_qdrant_results(response.points)
+            
+            for r in results:
+                # Dedup key: prefer chunk_id, fallback to (doc, article)
+                dedup_key = r.get("chunk_id") or f"{r.get('doc_title')}_{r.get('dieu_so')}"
+                
+                if dedup_key not in merged or r["score"] > merged[dedup_key]["score"]:
+                    merged[dedup_key] = r
+                    
+        except Exception as e:
+            logger.error(f"[Error] Multi-query search failed for query '{query[:50]}...': {e}")
+            continue
+    
+    # Sort by score descending and return top results
+    all_results = sorted(merged.values(), key=lambda x: x["score"], reverse=True)
+    
+    logger.info(f"[MultiQuery] {len(queries)} queries → {len(all_results)} unique chunks (from {sum(1 for _ in queries)} searches)")
+    
+    return all_results[:top_k + 3]  # Return slightly more to ensure diversity
+
+
+def _parse_qdrant_results(search_result) -> list:
+    """Parse Qdrant search results into standardized dicts."""
     results = []
     for hit in search_result:
         p = hit.payload
@@ -43,7 +100,8 @@ def vector_search(query: str, top_k: int = None) -> list:
         
         results.append({
             "chunk_id": p.get("chunk_id"),
-            "content": p.get("content", ""),
+            # Parent-Child Chunking: Use the full article text (parent) if available, otherwise fallback to the matched chunk (child)
+            "content": p.get("full_dieu_text") or p.get("noi_dung_chunk") or p.get("content", ""),
             "context_text": p.get("context_text", ""),
             "dieu_so": p.get("dieu_so", ""),
             "dieu_ten": p.get("dieu_ten", ""),

@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from app.core.config import Config
@@ -34,11 +35,24 @@ def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b) + 1e-8))
 
 
-def serialize_embedding(embedding: np.ndarray) -> bytes:
-    """Serialize numpy array to bytes for MySQL BLOB storage."""
-    return embedding.tobytes()
+def calibrate_score(raw_score: float) -> float:
+    """
+    Calibrate raw cosine similarity to a user-friendly confidence score.
+
+    Sentence-transformer models with cosine similarity typically return:
+    - 0.5-0.7  for highly relevant results
+    - 0.35-0.5 for moderately relevant results
+    - <0.3     for weakly relevant results
+
+    This sigmoid maps those ranges to a more intuitive display scale:
+    - 0.5  raw → ~0.88 display
+    - 0.45 raw → ~0.82 display
+    - 0.4  raw → ~0.73 display
+    - 0.35 raw → ~0.62 display
+    - 0.3  raw → ~0.50 display
+    """
+    calibrated = 1 / (1 + math.exp(-10 * (raw_score - 0.3)))
+    return round(min(max(calibrated, 0.01), 0.99), 3)
 
 
-def deserialize_embedding(blob: bytes) -> np.ndarray:
-    """Deserialize bytes from MySQL BLOB to numpy array."""
-    return np.frombuffer(blob, dtype=np.float32)
+

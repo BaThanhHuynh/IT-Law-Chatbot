@@ -1,11 +1,18 @@
 """
 Knowledge Graph engine for hybrid search (vector + graph traversal).
 Uses LangChain Neo4jGraph and Cypher queries.
+
+Architecture:
+  hybrid_search() is the SINGLE ENTRY POINT called by the chatbot engine.
+  It orchestrates: multi-query vector search + KG entity search + graph traversal.
 """
+import re
 from app.core.config import Config
-from app.services.rag.retriever import vector_search
+from app.core.logger import logger
+from app.services.rag.retriever import multi_query_search
+from app.services.rag.query_expansion import expand_abbreviations, get_domain_static_queries
 from langchain_neo4j import Neo4jGraph
-from neo4j import GraphDatabase
+
 
 class KnowledgeGraph:
     """Knowledge graph loaded from Neo4j."""
@@ -25,14 +32,33 @@ class KnowledgeGraph:
             )
         return self._graph
 
-    def search_entities(self, query: str, top_k: int = 5) -> list:
-        """Search entities by name/description using full-text index or CONTAINS."""
-        # Split query into words to match
-        words = [w.lower() for w in query.split() if len(w) >= 2]
+    def search_entities(self, query: str, top_k: int = 5, min_score: float = 0.35) -> list:
+        """
+        Search entities by name/description using keyword match in Neo4j,
+        then re-rank using real cosine similarity from the embedding model.
+        
+        Applies query expansion to handle abbreviations (CNTT, SHTT, etc.)
+        
+        Args:
+            query: Search query string
+            top_k: Maximum number of results to return
+            min_score: Minimum cosine similarity threshold to filter irrelevant entities
+        """
+        from app.services.rag.embeddings import get_embedding, cosine_similarity
+
+        # Apply abbreviation expansion for broader keyword matching
+        expanded_query = expand_abbreviations(query)
+        
+        # Combine words from both original and expanded queries for keyword search
+        all_words = set()
+        for text in [query, expanded_query]:
+            all_words.update(w.lower() for w in text.split() if len(w) >= 2)
+        words = list(all_words)
+        
         if not words:
             return []
 
-        # A basic keyword match Cypher query
+        # Step 1: Keyword-based candidate retrieval from Neo4j (cast a wider net)
         cypher = """
         MATCH (n:Entity)
         WHERE any(word in $words WHERE toLower(n.name) CONTAINS word OR toLower(n.description) CONTAINS word)
@@ -40,21 +66,31 @@ class KnowledgeGraph:
         LIMIT $top_k
         """
         
-        results = self.graph.query(cypher, params={"words": words, "top_k": top_k})
+        results = self.graph.query(cypher, params={"words": words, "top_k": top_k * 3})
         
+        if not results:
+            return []
+
+        # Step 2: Compute real cosine similarity between EXPANDED query and each entity
+        # Use expanded query for embedding to match entity descriptions better
+        query_embedding = get_embedding(expanded_query)
+
         scored = []
         for r in results:
             labels = [l for l in r.get("labels", []) if l != "Entity"]
             entity_type = labels[0] if labels else "UNKNOWN"
             
-            # Recompute a basic score for ranking
-            score = 0
-            name_lower = r.get("name", "").lower()
-            desc_lower = r.get("description", "").lower()
-            for w in words:
-                if w in name_lower: score += 3
-                if w in desc_lower: score += 1
-                
+            # Build entity text = name + description for semantic comparison
+            entity_text = f"{r.get('name', '')}. {r.get('description', '')}"
+            entity_embedding = get_embedding(entity_text)
+            
+            # Real cosine similarity score
+            sim_score = cosine_similarity(query_embedding, entity_embedding)
+            
+            # Filter out entities below the minimum relevance threshold
+            if sim_score < min_score:
+                continue
+
             scored.append({
                 "entity": {
                     "entity_id": r["entity_id"],
@@ -62,11 +98,11 @@ class KnowledgeGraph:
                     "description": r["description"],
                     "entity_type": entity_type
                 },
-                "score": score
+                "score": round(sim_score, 3)
             })
 
         scored.sort(key=lambda x: x["score"], reverse=True)
-        return scored
+        return scored[:top_k]
 
     def get_graph_context(self, entity_ids: list, depth: int = 1) -> str:
         """
@@ -184,30 +220,64 @@ def get_knowledge_graph() -> KnowledgeGraph:
     return _kg_instance
 
 
-def hybrid_search(query: str, top_k: int = 5) -> dict:
+def hybrid_search(query: str, sub_queries: list = None, entities: str = None, top_k: int = 5) -> dict:
     """
-    Hybrid search: combine vector search + knowledge graph traversal.
+    Hybrid search: combine multi-query vector search + knowledge graph traversal.
     Returns both RAG chunks and graph context.
+    
+    This is the SINGLE ENTRY POINT for the chatbot pipeline.
+    
+    Strategy:
+    - Vector search: Multi-query (original + LLM variants + expanded abbreviations)
+    - Graph search:  Expanded entities (keyword match with abbreviation expansion)
+    - Graph traversal: Expand context from matched entities + vector result entities
+    
+    Args:
+        query: Original user query
+        sub_queries: LLM-generated query variants (if None, falls back to single query)
+        entities: Extracted entity keywords for graph keyword matching
+        top_k: Number of results per search
     """
-    # 1. Vector search for relevant chunks
-    vector_results = vector_search(query, top_k=top_k)
+    # ── 1. Multi-query Vector Search ──────────────────────────────────
+    # Layer 1: LLM-generated sub_queries (semantic diversity)
+    all_queries = list(sub_queries) if sub_queries else [query]
+    
+    # Layer 2: Abbreviation-expanded version (lexical coverage)
+    expanded = expand_abbreviations(query)
+    if expanded != query and expanded not in all_queries:
+        all_queries.append(expanded)
+    
+    # Layer 3: Domain static queries (rule-based, always consistent)
+    # These guarantee specific laws are always retrieved for known topics
+    # regardless of LLM variant quality (fixes non-deterministic retrieval)
+    static_queries = get_domain_static_queries(query)
+    for sq in static_queries:
+        if sq not in all_queries:
+            all_queries.append(sq)
+    
+    logger.info(f"[HybridSearch] Total queries: {len(all_queries)} "
+                f"(LLM:{len(sub_queries) if sub_queries else 1} "
+                f"+ abbr:{1 if expanded != query else 0} "
+                f"+ static:{len(static_queries)})")
+    
+    vector_results = multi_query_search(all_queries, top_k=top_k)
 
-    # 2. Knowledge graph search for related entities
+    # ── 2. Knowledge Graph Entity Search ──────────────────────────────
+    graph_search_term = entities if entities else query
     kg = get_knowledge_graph()
     try:
-        kg_results = kg.search_entities(query, top_k=3)
+        kg_results = kg.search_entities(graph_search_term, top_k=3)
     except Exception as e:
-        print(f"[KG Error] Failed to search entities: {e}")
+        logger.error(f"[KG Error] Entity search failed: {e}")
         kg_results = []
 
-    # 3. Expand graph context from matched entities
+    # ── 3. Expand Graph Context ───────────────────────────────────────
     matched_entity_ids = [r["entity"]["entity_id"] for r in kg_results]
 
-    # Also find entities linked to vector search results
+    # Also bridge vector results → graph entities (by article number)
     for vr in vector_results[:3]:
         article = vr.get("article", "")
         if article:
-            import re
             art_match = re.search(r'(\d+)', article)
             if art_match:
                 article_entity_id = f"dieu_{art_match.group(1)}"
@@ -222,7 +292,7 @@ def hybrid_search(query: str, top_k: int = 5) -> dict:
             graph_context = ""
             graph_data = {"nodes": [], "edges": []}
     except Exception as e:
-        print(f"[KG Error] Failed to get graph context: {e}")
+        logger.error(f"[KG Error] Graph context failed: {e}")
         graph_context = ""
         graph_data = {"nodes": [], "edges": []}
 
