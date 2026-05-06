@@ -33,7 +33,7 @@
     --glass-border: rgba(255, 255, 255, 0.08);
 
     --sidebar-width: 280px;
-    --graph-width: 360px;
+    --graph-width: 0;
     --header-height: 60px;
     --input-height: 80px;
 
@@ -283,9 +283,12 @@ body {
     color: var(--text-primary);
 }
 
+.btn-toggle-graph {
+    display: none;
+}
+
 .btn-toggle-graph.active {
-    color: var(--accent-secondary);
-    background: var(--accent-glow);
+    display: none;
 }
 
 .header-title {
@@ -342,15 +345,7 @@ body {
     }
 }
 
-.welcome-icon {
-    margin-bottom: 20px;
-    animation: float 3s ease-in-out infinite;
-}
 
-@keyframes float {
-    0%, 100% { transform: translateY(0px); }
-    50% { transform: translateY(-10px); }
-}
 
 .welcome-screen h2 {
     font-size: 1.5rem;
@@ -592,84 +587,7 @@ body {
     30% { transform: translateY(-6px); }
 }
 
-/* ============================================
-   KNOWLEDGE GRAPH PANEL
-   ============================================ */
-.graph-panel {
-    width: 0;
-    overflow: hidden;
-    background: var(--bg-secondary);
-    border-left: 1px solid var(--border-color);
-    display: flex;
-    flex-direction: column;
-    transition: width var(--transition);
-}
 
-.graph-panel.visible {
-    width: var(--graph-width);
-    min-width: var(--graph-width);
-}
-
-.graph-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.graph-header h3 {
-    font-size: 0.9rem;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.btn-close-graph {
-    width: 28px;
-    height: 28px;
-    border: none;
-    border-radius: var(--radius-sm);
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all var(--transition);
-}
-
-.btn-close-graph:hover {
-    background: var(--bg-hover);
-    color: var(--text-primary);
-}
-
-#graphCanvas {
-    flex: 1;
-    width: 100%;
-    cursor: grab;
-}
-
-.graph-legend {
-    padding: 10px 16px;
-    border-top: 1px solid var(--border-color);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-}
-
-.legend-item {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    font-size: 0.7rem;
-    color: var(--text-muted);
-}
-
-.legend-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-}
 
 /* ============================================
    INPUT AREA
@@ -772,14 +690,7 @@ body {
         grid-template-columns: 1fr;
     }
 
-    .graph-panel.visible {
-        position: fixed;
-        right: 0;
-        top: 0;
-        height: 100%;
-        z-index: 200;
-        box-shadow: var(--shadow-lg);
-    }
+
 }
 
 @media (max-width: 480px) {

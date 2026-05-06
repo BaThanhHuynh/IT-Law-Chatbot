@@ -5,8 +5,7 @@
 const API_BASE = '';  // Same origin
 let currentConversationId = null;
 let isLoading = false;
-let graphVisible = false;
-let graphData = { nodes: [], edges: [] };
+
 
 // ---- DOM Elements ----
 const chatArea = document.getElementById('chatArea');
@@ -16,11 +15,9 @@ const messageInput = document.getElementById('messageInput');
 const btnSend = document.getElementById('btnSend');
 const btnNewChat = document.getElementById('btnNewChat');
 const btnToggleSidebar = document.getElementById('btnToggleSidebar');
-const btnToggleGraph = document.getElementById('btnToggleGraph');
-const btnCloseGraph = document.getElementById('btnCloseGraph');
+
 const sidebar = document.getElementById('sidebar');
-const graphPanel = document.getElementById('graphPanel');
-const graphCanvas = document.getElementById('graphCanvas');
+
 const conversationList = document.getElementById('conversationList');
 const chatTitle = document.getElementById('chatTitle');
 
@@ -28,16 +25,13 @@ const chatTitle = document.getElementById('chatTitle');
 document.addEventListener('DOMContentLoaded', () => {
     loadConversations();
     setupEventListeners();
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
 });
 
 function setupEventListeners() {
     btnSend.addEventListener('click', sendMessage);
     btnNewChat.addEventListener('click', newConversation);
     btnToggleSidebar.addEventListener('click', toggleSidebar);
-    btnToggleGraph.addEventListener('click', toggleGraph);
-    btnCloseGraph.addEventListener('click', toggleGraph);
+
 
     messageInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -131,7 +125,7 @@ function newConversation() {
     welcomeScreen.style.display = 'flex';
     messagesContainer.style.display = 'none';
     messagesContainer.innerHTML = '';
-    chatTitle.textContent = 'Tư vấn Luật Công nghệ thông tin';
+    chatTitle.textContent = 'ITL Assistant';
 
     document.querySelectorAll('.conversation-item').forEach(item => {
         item.classList.remove('active');
@@ -177,11 +171,7 @@ async function sendMessage() {
             // Append assistant message
             appendMessage('assistant', data.answer, data.sources);
 
-            // Update graph
-            if (data.graph_data && (data.graph_data.nodes.length > 0)) {
-                graphData = data.graph_data;
-                drawGraph();
-            }
+
 
             // Refresh conversation list
             loadConversations();
@@ -291,132 +281,7 @@ function formatMessageContent(content) {
     return html;
 }
 
-// ---- Knowledge Graph Visualization ----
-function toggleGraph() {
-    graphVisible = !graphVisible;
-    graphPanel.classList.toggle('visible', graphVisible);
-    btnToggleGraph.classList.toggle('active', graphVisible);
 
-    if (graphVisible) {
-        setTimeout(() => {
-            resizeCanvas();
-            if (graphData.nodes.length > 0) {
-                drawGraph();
-            } else {
-                loadFullGraph();
-            }
-        }, 300);
-    }
-}
-
-async function loadFullGraph() {
-    try {
-        const result = await apiCall('/api/knowledge-graph?depth=1');
-        if (result.success && result.data.nodes.length > 0) {
-            graphData = result.data;
-            drawGraph();
-        }
-    } catch (e) {
-        console.error('Failed to load graph:', e);
-    }
-}
-
-function resizeCanvas() {
-    const canvas = graphCanvas;
-    if (!canvas) return;
-    const rect = canvas.parentElement.getBoundingClientRect();
-    canvas.width = rect.width || 360;
-    canvas.height = (rect.height - 90) || 400;
-    if (graphData.nodes.length > 0) drawGraph();
-}
-
-function drawGraph() {
-    const canvas = graphCanvas;
-    const ctx = canvas.getContext('2d');
-    const W = canvas.width;
-    const H = canvas.height;
-
-    ctx.clearRect(0, 0, W, H);
-
-    if (graphData.nodes.length === 0) {
-        ctx.fillStyle = '#6b6b80';
-        ctx.font = '13px Inter';
-        ctx.textAlign = 'center';
-        ctx.fillText('Chưa có dữ liệu Knowledge Graph', W / 2, H / 2);
-        return;
-    }
-
-    // Color map
-    const colorMap = {
-        'VAN_BAN': '#a78bfa',
-        'CHUONG': '#fbbf24',
-        'DIEU_LUAT': '#818cf8',
-        'KHAI_NIEM': '#34d399',
-        'CHU_THE': '#fb923c',
-        'HANH_VI': '#f87171',
-        'QUYEN': '#60a5fa',
-        'NGHIA_VU': '#a78bfa',
-    };
-
-    // Layout: circular
-    const nodes = graphData.nodes;
-    const edges = graphData.edges;
-    const centerX = W / 2;
-    const centerY = H / 2;
-    const radius = Math.min(W, H) * 0.35;
-
-    const nodePositions = {};
-    nodes.forEach((node, i) => {
-        const angle = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
-        nodePositions[node.id] = {
-            x: centerX + radius * Math.cos(angle),
-            y: centerY + radius * Math.sin(angle),
-            node: node,
-        };
-    });
-
-    // Draw edges
-    ctx.lineWidth = 1;
-    edges.forEach(edge => {
-        const src = nodePositions[edge.source];
-        const tgt = nodePositions[edge.target];
-        if (!src || !tgt) return;
-
-        ctx.beginPath();
-        ctx.moveTo(src.x, src.y);
-        ctx.lineTo(tgt.x, tgt.y);
-        ctx.strokeStyle = 'rgba(99, 102, 241, 0.2)';
-        ctx.stroke();
-    });
-
-    // Draw nodes
-    nodes.forEach((node, i) => {
-        const pos = nodePositions[node.id];
-        if (!pos) return;
-
-        const color = colorMap[node.type] || '#818cf8';
-        const nodeRadius = node.type === 'DIEU_LUAT' ? 8 : 5;
-
-        // Glow
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, nodeRadius + 4, 0, Math.PI * 2);
-        ctx.fillStyle = color + '20';
-        ctx.fill();
-
-        // Node
-        ctx.beginPath();
-        ctx.arc(pos.x, pos.y, nodeRadius, 0, Math.PI * 2);
-        ctx.fillStyle = color;
-        ctx.fill();
-
-        // Label
-        ctx.fillStyle = '#a0a0b8';
-        ctx.font = '9px Inter';
-        ctx.textAlign = 'center';
-        const label = node.label.length > 20 ? node.label.substring(0, 20) + '...' : node.label;
-        ctx.fillText(label, pos.x, pos.y + nodeRadius + 14);
-    });
-}
 
 // ---- Sidebar Toggle ----
 function toggleSidebar() {
