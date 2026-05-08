@@ -21,3 +21,4 @@ database/
 # Ignore database files if any
 *.sqlite3
 *.db
+models/

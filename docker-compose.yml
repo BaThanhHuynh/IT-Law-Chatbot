@@ -1,0 +1,29 @@
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant_it_law
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./data/qdrant_storage:/qdrant/storage
+    restart: always
+
+  chatbot:
+    build: .
+    container_name: it_law_chatbot
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      # Lưu ý: Nếu Neo4j chạy trên host (Windows), hãy dùng host.docker.internal làm URI trong file .env
+      - EMBEDDING_MODEL=/app/models/embedding_model
+    depends_on:
+      - qdrant
+    volumes:
+      - .:/app
+      - ./models:/app/models
+    restart: always

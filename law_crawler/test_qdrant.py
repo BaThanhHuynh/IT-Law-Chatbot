@@ -7,7 +7,7 @@ from sentence_transformers import SentenceTransformer
 
 # ========================== CẤU HÌNH ==========================
 COLLECTION_NAME = "it_law_chunks"
-MODEL_PATH = r"C:\law_final_model_v2"
+MODEL_PATH = r"C:\law_v2_model_20260505_1418"
 
 QUERIES = [
     "những hành vi nào bị nghiêm cấm trên không gian mạng"

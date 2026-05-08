@@ -8,12 +8,10 @@ from app.core.config import Config
 from app.core.logger import logger
 from app.services.rag.retriever import get_context_from_results
 from app.services.graphrag.knowledge_graph import hybrid_search
-from app.services.chatbot.prompts import SYSTEM_PROMPT, RAG_PROMPT_TEMPLATE, TITLE_PROMPT, INTENT_CLASSIFICATION_PROMPT, ENTITY_EXTRACTION_PROMPT, MULTI_QUERY_PROMPT
+from app.services.chatbot.prompts import SYSTEM_PROMPT, RAG_PROMPT_TEMPLATE, TITLE_PROMPT, INTENT_CLASSIFICATION_PROMPT, ENTITY_EXTRACTION_PROMPT, MULTI_QUERY_PROMPT, QUERY_REWRITE_PROMPT
 
 # Configure Gemini
 _model = None
-
-_DEFAULT_HISTORY = {"conversations": {}, "messages": []}
 
 def get_llm():
     """Get or initialize Gemini model."""
@@ -25,24 +23,6 @@ def get_llm():
     return _model
 
 
-def _load_history():
-    if not os.path.exists(Config.CHAT_HISTORY_PATH):
-        return {**_DEFAULT_HISTORY}
-    with open(Config.CHAT_HISTORY_PATH, "r", encoding="utf-8") as f:
-        try:
-            data = json.load(f)
-        except json.JSONDecodeError:
-            return {**_DEFAULT_HISTORY}
-    # Validate structure — handle wiped/malformed files
-    if not isinstance(data, dict) or "conversations" not in data or "messages" not in data:
-        logger.warning("[History] Invalid chat_history.json structure, resetting to default.")
-        return {**_DEFAULT_HISTORY}
-    return data
-
-def _save_history(data):
-    os.makedirs(os.path.dirname(Config.CHAT_HISTORY_PATH), exist_ok=True)
-    with open(Config.CHAT_HISTORY_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
 
 def classify_intent(query: str) -> str:
     """Phân loại ý định người dùng (CHATCHIT hoặc LUAT)"""
@@ -57,6 +37,23 @@ def classify_intent(query: str) -> str:
     except Exception as e:
         logger.error(f"[Error] Intent classification failed: {e}")
         return "LUAT"  # Fallback to LUAT
+def rewrite_query(query: str, history_context: str) -> str:
+    """Viết lại câu hỏi sử dụng ngữ cảnh từ lịch sử."""
+    if not history_context.strip():
+        return query
+    try:
+        model = get_llm()
+        prompt = QUERY_REWRITE_PROMPT.format(history_context=history_context, query=query)
+        response = model.generate_content(prompt)
+        rewritten = response.text.strip()
+        # Fallback if model refuses or returns empty
+        if not rewritten or len(rewritten) < 2:
+            return query
+        return rewritten
+    except Exception as e:
+        logger.error(f"[Error] Query rewrite failed: {e}")
+        return query
+
 
 def extract_entities(query: str) -> str:
     """Trích xuất từ khóa pháp lý từ câu hỏi."""
@@ -116,11 +113,24 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
     if not conversation_id:
         conversation_id = create_conversation(query)
 
-    # 2. Save user message
+    # 1.5 Contextual Query Rewriting
+    raw_history = get_conversation_history(conversation_id, limit=4) # 2 recent turns
+    history_context = ""
+    for msg in raw_history:
+        role_name = "User" if msg["role"] == "user" else "Bot"
+        history_context += f"{role_name}: {msg['content']}\n"
+    
+    rewritten_query = query
+    if history_context.strip():
+        rewritten_query = rewrite_query(query, history_context)
+        if rewritten_query != query:
+            logger.info(f"[{conversation_id}] Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
+
+    # 2. Save user message (original query)
     save_message(conversation_id, "user", query)
 
-    # 3. Classify intent
-    intent = classify_intent(query)
+    # 3. Classify intent (using rewritten query)
+    intent = classify_intent(rewritten_query)
     logger.info(f"[{conversation_id}] Query classified as: {intent}")
 
     if intent == "CHATCHIT":
@@ -134,19 +144,15 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         # LUAT MODE: Full hybrid search pipeline
         try:
             # Step 1: Extract entities for KG keyword matching
-            extracted_entities = extract_entities(query)
+            extracted_entities = extract_entities(rewritten_query)
             logger.info(f"[{conversation_id}] Extracted entities: {extracted_entities}")
 
             # Step 2: Generate multi-query variants via LLM
-            sub_queries = generate_sub_queries(query)
+            sub_queries = generate_sub_queries(rewritten_query)
 
-            # Step 3: Hybrid search (multi-query vector + KG + graph traversal)
-            # This single call handles everything:
-            #   - Multi-query vector search (original + variants + abbreviation-expanded)
-            #   - KG entity search (with abbreviation expansion)
-            #   - Graph context traversal (from matched entities)
+            # Step 3: Hybrid search
             search_results = hybrid_search(
-                query=query,
+                query=rewritten_query,
                 sub_queries=sub_queries,
                 entities=extracted_entities,
                 top_k=Config.TOP_K_RESULTS,
@@ -168,7 +174,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         prompt = RAG_PROMPT_TEMPLATE.format(
             rag_context=rag_context,
             graph_context=graph_context,
-            query=query,
+            query=rewritten_query,
         )
 
     # 4. Get conversation history for context
@@ -264,8 +270,29 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
     }
 
 
+def _init_qdrant_history():
+    """Initialize Qdrant collection for chat history if it doesn't exist."""
+    from qdrant_client.models import VectorParams, Distance
+    from app.services.rag.retriever import get_qdrant_client
+    
+    client = get_qdrant_client()
+    try:
+        if not client.collection_exists(Config.QDRANT_HISTORY_COLLECTION):
+            client.create_collection(
+                collection_name=Config.QDRANT_HISTORY_COLLECTION,
+                vectors_config=VectorParams(size=1, distance=Distance.COSINE),
+            )
+            logger.info(f"[Qdrant] Created collection {Config.QDRANT_HISTORY_COLLECTION} for chat history.")
+    except Exception as e:
+        logger.error(f"[Qdrant] Error initializing history collection: {e}")
+
 def create_conversation(first_query: str = "") -> str:
     """Create a new conversation and return its ID."""
+    from qdrant_client.models import PointStruct
+    from app.services.rag.retriever import get_qdrant_client
+    
+    _init_qdrant_history()
+    client = get_qdrant_client()
     conv_id = str(uuid.uuid4())
     title = "Cuộc hội thoại mới"
 
@@ -279,48 +306,128 @@ def create_conversation(first_query: str = "") -> str:
         except Exception:
             title = first_query[:50] + "..." if len(first_query) > 50 else first_query
 
-    data = _load_history()
     now = datetime.now().isoformat()
-    data["conversations"][conv_id] = {
-        "id": conv_id,
-        "title": title,
-        "created_at": now,
-        "updated_at": now
-    }
-    _save_history(data)
+    
+    try:
+        client.upsert(
+            collection_name=Config.QDRANT_HISTORY_COLLECTION,
+            points=[
+                PointStruct(
+                    id=conv_id,
+                    vector=[0.0],
+                    payload={
+                        "type": "conversation",
+                        "id": conv_id,
+                        "title": title,
+                        "created_at": now,
+                        "updated_at": now
+                    }
+                )
+            ]
+        )
+    except Exception as e:
+        logger.error(f"[Error] Failed to create conversation {conv_id}: {e}")
+        
     return conv_id
 
 
 def save_message(conversation_id: str, role: str, content: str, sources: list = None):
-    """Save a message to the conversation history."""
-    data = _load_history()
+    """Save a message to the conversation history in Qdrant."""
+    from qdrant_client.models import PointStruct
+    from app.services.rag.retriever import get_qdrant_client
+    
+    _init_qdrant_history()
+    client = get_qdrant_client()
+    msg_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
     
-    data["messages"].append({
-        "conversation_id": conversation_id,
-        "role": role,
-        "content": content,
-        "sources": sources,
-        "created_at": now
-    })
-    
-    if conversation_id in data["conversations"]:
-        data["conversations"][conversation_id]["updated_at"] = now
+    try:
+        client.upsert(
+            collection_name=Config.QDRANT_HISTORY_COLLECTION,
+            points=[
+                PointStruct(
+                    id=msg_id,
+                    vector=[0.0],
+                    payload={
+                        "type": "message",
+                        "conversation_id": conversation_id,
+                        "role": role,
+                        "content": content,
+                        "sources": sources,
+                        "created_at": now
+                    }
+                )
+            ]
+        )
         
-    _save_history(data)
+        # Update conversation's updated_at
+        records = client.retrieve(
+            collection_name=Config.QDRANT_HISTORY_COLLECTION,
+            ids=[conversation_id]
+        )
+        if records:
+            conv_payload = records[0].payload
+            conv_payload["updated_at"] = now
+            client.upsert(
+                collection_name=Config.QDRANT_HISTORY_COLLECTION,
+                points=[
+                    PointStruct(
+                        id=conversation_id,
+                        vector=[0.0],
+                        payload=conv_payload
+                    )
+                ]
+            )
+    except Exception as e:
+        logger.error(f"[Error] Failed to save message for {conversation_id}: {e}")
 
 
 def get_conversation_history(conversation_id: str, limit: int = 20) -> list:
-    """Get conversation messages."""
-    data = _load_history()
-    msgs = [m for m in data["messages"] if m["conversation_id"] == conversation_id]
-    msgs.sort(key=lambda x: x["created_at"])
-    return msgs[-limit:] if limit else msgs
+    """Get conversation messages from Qdrant."""
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+    from app.services.rag.retriever import get_qdrant_client
+    
+    _init_qdrant_history()
+    client = get_qdrant_client()
+    try:
+        records, _ = client.scroll(
+            collection_name=Config.QDRANT_HISTORY_COLLECTION,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(key="type", match=MatchValue(value="message")),
+                    FieldCondition(key="conversation_id", match=MatchValue(value=conversation_id))
+                ]
+            ),
+            limit=1000
+        )
+        msgs = [r.payload for r in records]
+        msgs.sort(key=lambda x: x["created_at"])
+        return msgs[-limit:] if limit else msgs
+    except Exception as e:
+        logger.error(f"[Error] get_conversation_history failed: {e}")
+        return []
 
 
 def get_all_conversations() -> list:
-    """Get all conversations sorted by recent."""
-    data = _load_history()
-    convs = list(data["conversations"].values())
-    convs.sort(key=lambda x: x["updated_at"], reverse=True)
-    return convs
+    """Get all conversations sorted by recent from Qdrant."""
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+    from app.services.rag.retriever import get_qdrant_client
+    
+    _init_qdrant_history()
+    client = get_qdrant_client()
+    try:
+        records, _ = client.scroll(
+            collection_name=Config.QDRANT_HISTORY_COLLECTION,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(key="type", match=MatchValue(value="conversation"))
+                ]
+            ),
+            limit=10000
+        )
+        convs = [r.payload for r in records]
+        convs.sort(key=lambda x: x["updated_at"], reverse=True)
+        return convs
+    except Exception as e:
+        logger.error(f"[Error] get_all_conversations failed: {e}")
+        return []

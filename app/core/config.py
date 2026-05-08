@@ -11,6 +11,7 @@ class Config:
     # Qdrant Database Service
     QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
     QDRANT_COLLECTION = "it_law_chunks"
+    QDRANT_HISTORY_COLLECTION = "chat_history"
 
     # Chat History (JSON)
     CHAT_HISTORY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "chat_history.json")
@@ -25,8 +26,8 @@ class Config:
     API_DEBUG = os.getenv("API_DEBUG", "true").lower() == "true"
 
     # Embedding model
-    EMBEDDING_MODEL = r"C:\law_final_model_v2"
-    EMBEDDING_DIM = 384
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "models", "embedding_model"))
+    EMBEDDING_DIM = 768
 
     # RAG settings
     CHUNK_SIZE = 500

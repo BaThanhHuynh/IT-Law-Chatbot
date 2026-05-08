@@ -2,6 +2,7 @@ import os
 import sys
 import json
 from neo4j import GraphDatabase
+from sentence_transformers import SentenceTransformer
 
 # Thêm đường dẫn project vào sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -11,10 +12,11 @@ sys.path.append(project_dir)
 from app.core.config import Config
 from app.core.logger import logger
 
-KG_DATA_PATH = os.path.join(project_dir, "data", "kg_data.json")
+KG_DATA_PATH = os.path.join(project_dir, "datab", "kg_data.json")
+MODEL_NAME = r"C:\law_v2_model_20260505_1418" # Cập nhật mô hình mới
 
 def migrate_to_neo4j():
-    """Đọc dữ liệu từ file JSON và ghi vào Neo4j."""
+    """Đọc dữ liệu từ file JSON, nhúng vector và ghi vào Neo4j."""
     
     if not os.path.exists(KG_DATA_PATH):
         logger.warning(f"Không tìm thấy file dữ liệu Graph tại {KG_DATA_PATH}")
@@ -42,6 +44,14 @@ def migrate_to_neo4j():
     
     logger.info(f"Đã tải {len(entities)} entities và {len(relationships)} relationships từ JSON.")
 
+    # KHỞI TẠO MÔ HÌNH EMBEDDING
+    logger.info(f"Đang tải mô hình embedding: {MODEL_NAME}...")
+    try:
+        model = SentenceTransformer(MODEL_NAME)
+    except Exception as e:
+        logger.error(f"Lỗi khi tải mô hình embedding: {e}")
+        return
+
     logger.info(f"Đang kết nối đến Neo4j tại {Config.NEO4J_URI}...")
     try:
         driver = GraphDatabase.driver(
@@ -53,24 +63,34 @@ def migrate_to_neo4j():
         return
 
     with driver.session() as session:
-        # Xóa dữ liệu cũ
-        logger.info("Đang xóa dữ liệu cũ trong Neo4j...")
-        session.run("MATCH (n) DETACH DELETE n")
+        # ĐÃ VÔ HIỆU HÓA LỆNH XÓA ĐỂ GIỮ LẠI DỮ LIỆU CŨ
+        # logger.info("Đang xóa dữ liệu cũ trong Neo4j...")
+        # session.run("MATCH (n) DETACH DELETE n")
         
-        # Thêm Entities (Nodes)
-        logger.info("Đang tạo Nodes...")
+        # Thêm Entities (Nodes) và nhúng Vector
+        logger.info("Đang tạo Nodes và tính toán Embeddings...")
         for entity in entities:
             label = entity["entity_type"]
+            name = entity["name"]
+            description = entity.get("description", "")
+            
+            # Tạo nội dung để nhúng (kết hợp tên và mô tả)
+            text_to_embed = f"{name}. {description}"
+            # Chuyển đổi thành vector (đưa về dạng list để lưu vào Neo4j)
+            embedding_vector = model.encode(text_to_embed, normalize_embeddings=True).tolist()
+
             query = f"""
             MERGE (n:`{label}` {{entity_id: $entity_id}})
             SET n.name = $name,
                 n.description = $description,
+                n.embedding = $embedding,
                 n:Entity
             """
             session.run(query, {
                 "entity_id": entity["entity_id"],
-                "name": entity["name"],
-                "description": entity.get("description", "")
+                "name": name,
+                "description": description,
+                "embedding": embedding_vector
             })
             
         # Thêm Relationships (Edges)
@@ -93,12 +113,23 @@ def migrate_to_neo4j():
 
         logger.info("Đang tạo indexes...")
         try:
+            # Index văn bản thông thường
             session.run("CREATE TEXT INDEX entity_name_idx IF NOT EXISTS FOR (n:Entity) ON (n.name)")
+            
+            # Index vector cho Neo4j (kích thước 384 tương ứng mô hình)
+            session.run("""
+            CREATE VECTOR INDEX entity_embedding_idx IF NOT EXISTS
+            FOR (n:Entity) ON (n.embedding)
+            OPTIONS {indexConfig: {
+              `vector.dimensions`: 384,
+              `vector.similarity_function`: 'cosine'
+            }}
+            """)
         except Exception as e:
             logger.warning(f"Lưu ý khi tạo index: {e}")
 
     driver.close()
-    logger.info("Đồng bộ Neo4j hoàn tất thành công!")
+    logger.info("Đồng bộ và nhúng vector vào Neo4j hoàn tất thành công!")
 
 if __name__ == "__main__":
     migrate_to_neo4j()

@@ -103,3 +103,25 @@ Hành vi xâm phạm quyền sở hữu trí tuệ bị xử lý hình sự hàn
 
 Câu hỏi gốc: {query}
 """
+
+QUERY_REWRITE_PROMPT = """Dựa vào lịch sử cuộc trò chuyện (nếu có) và câu hỏi mới nhất của người dùng, hãy viết lại câu hỏi mới nhất thành một câu hỏi độc lập, rõ ràng và đầy đủ ngữ cảnh nhất để phục vụ cho hệ thống tìm kiếm (RAG).
+
+Quy tắc:
+1. Nếu câu hỏi mới nhất có sử dụng đại từ thay thế (nó, điều đó, luật này, hành vi đó...) hoặc bị thiếu chủ ngữ/ngữ cảnh, hãy thay thế chúng bằng các danh từ/thực thể cụ thể đã được nhắc đến trong Lịch sử trò chuyện.
+2. KHÔNG tự bịa thêm thông tin không có trong lịch sử.
+3. Nếu câu hỏi mới nhất đã đầy đủ ý nghĩa và không cần ngữ cảnh từ lịch sử, hãy giữ nguyên câu hỏi đó.
+4. CHỈ TRẢ VỀ CÂU HỎI ĐÃ ĐƯỢC VIẾT LẠI, tuyệt đối không giải thích hay thêm bất kỳ từ ngữ nào khác.
+
+Ví dụ:
+Lịch sử:
+User: Bản quyền phần mềm máy tính được bảo vệ thế nào?
+Bot: Bản quyền phần mềm máy tính được bảo vệ theo Luật Sở hữu trí tuệ...
+Câu hỏi mới nhất: Hành vi xâm phạm nó bị xử lý ra sao?
+-> Câu hỏi viết lại: Hành vi xâm phạm bản quyền phần mềm máy tính bị xử lý ra sao?
+
+Lịch sử:
+{history_context}
+
+Câu hỏi mới nhất: {query}
+Câu hỏi viết lại:
+"""

@@ -41,10 +41,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 # ── Cấu hình ─────────────────────────────────────────────────────────────────
-MODEL_NAME      = r"C:\law_final_model_v2"   # Fine-tuned model path
+MODEL_NAME      = r"C:\law_v2_model_20260505_1418"   # Fine-tuned model path
 COLLECTION_NAME = "it_law_chunks"
-VECTOR_DIM      = 384                        # MiniLM-L12-v2 output dim
-BATCH_SIZE      = 256                        # số chunk xử lý mỗi lần
+VECTOR_DIM      = 768                        # output dim
+BATCH_SIZE      = 256                       # số chunk xử lý mỗi lần
 QDRANT_URL      = "http://localhost:6333"
 
 
@@ -115,8 +115,8 @@ def upload_chunks(client: QdrantClient, collection_name: str,
             )
             points_buffer.append(point)
 
-        # Upload mỗi 200 points để tránh timeout
-        if len(points_buffer) >= 200:
+        # Upload mỗi 50 points để tránh timeout (giảm từ 200 xuống 50)
+        if len(points_buffer) >= 50:
             client.upsert(collection_name=collection_name, points=points_buffer)
             points_buffer = []
 
@@ -162,7 +162,7 @@ def search_demo(client: QdrantClient, collection_name: str,
 
 def main():
     parser = argparse.ArgumentParser(description="Embed law_chunks.jsonl vào Qdrant")
-    parser.add_argument("--input",      "-i", default="../data/law_chunks.jsonl")
+    parser.add_argument("--input",      "-i", default="data/law_chunks.jsonl")
     parser.add_argument("--model",      "-m", default=MODEL_NAME, help="Model path hoặc HF ID")
     parser.add_argument("--device",     "-d", default="cpu")
     parser.add_argument("--batch_size", "-b", type=int, default=BATCH_SIZE)
@@ -190,12 +190,17 @@ def main():
     # Load model
     model = load_model(args.model, args.device)
 
-    # Kết nối Qdrant
+    # Detect vector dimension from model
+    test_embedding = embed_batch(["test"], model, args.device)[0]
+    actual_vector_dim = len(test_embedding)
+    log.info(f"🔍 Vector dimension detected: {actual_vector_dim}")
+
+    # Kết nối Qdrant với timeout lớn hơn (120s)
     log.info(f"🔗 Kết nối Qdrant: {args.qdrant_url}")
-    client = QdrantClient(url=args.qdrant_url)
+    client = QdrantClient(url=args.qdrant_url, timeout=120)
 
     # Init collection
-    init_collection(client, args.collection, VECTOR_DIM, recreate=args.recreate)
+    init_collection(client, args.collection, actual_vector_dim, recreate=args.recreate)
 
     # Embed & upload
     upload_chunks(
