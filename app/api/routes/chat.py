@@ -1,12 +1,13 @@
 import json
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 
 from app.api.schemas import (
     ChatRequest, ChatResponse, ConversationListResponse,
     NewConversationResponse, HistoryResponse, KGResponse
 )
 from app.core.logger import logger
+from app.core.security import verify_api_key
 from app.services.chatbot.engine import (
     generate_response,
     create_conversation,
@@ -15,11 +16,10 @@ from app.services.chatbot.engine import (
 )
 from app.services.graphrag.knowledge_graph import get_knowledge_graph
 
-chat_router = APIRouter(prefix="/api")
+chat_router = APIRouter(prefix="/api", dependencies=[Depends(verify_api_key)])
 
 
 @chat_router.post("/chat", response_model=ChatResponse)
-
 async def chat(request: ChatRequest):
     """Send a message and get AI response."""
     if not request.message:

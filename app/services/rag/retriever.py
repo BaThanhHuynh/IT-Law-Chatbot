@@ -1,4 +1,5 @@
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from qdrant_client import QdrantClient
 from app.services.rag.embeddings import get_embedding
 from app.core.config import Config
@@ -33,60 +34,55 @@ def vector_search(query: str, top_k: int = None) -> list:
     except Exception as e:
         logger.error(f"[Error] Qdrant search failed: {e}")
         return []
-    
+
     return _parse_qdrant_results(search_result)
+
+
+def _single_query_search(query: str, top_k: int) -> list:
+    """Run a single query against Qdrant. Called from thread pool."""
+    try:
+        query_embedding = get_embedding(query)
+        client = get_qdrant_client()
+        response = client.query_points(
+            collection_name=Config.QDRANT_COLLECTION,
+            query=query_embedding.tolist(),
+            limit=top_k,
+            with_payload=True
+        )
+        return _parse_qdrant_results(response.points)
+    except Exception as e:
+        logger.error(f"[Error] Search failed for query '{query[:50]}': {e}")
+        return []
 
 
 def multi_query_search(queries: list, top_k: int = None) -> list:
     """
-    Multi-query retrieval: run multiple semantically diverse queries,
-    merge and deduplicate results by chunk_id, keeping the highest score.
-    
-    This ensures broader coverage across different legal documents
-    when a single query might only match one perspective.
-    
+    Multi-query retrieval: run all queries in parallel via ThreadPoolExecutor,
+    merge and deduplicate results by chunk_id keeping the highest score.
+
     Args:
         queries: List of query strings (original + LLM-generated variants)
         top_k: Max results PER query (final result may be larger before truncation)
-    
+
     Returns:
         Merged, deduplicated, and sorted list of search results
     """
     top_k = top_k or Config.TOP_K_RESULTS
-    
-    # Collect all results, deduplicate by chunk_id (keep best score)
-    merged = {}  # key: chunk_id or (doc_title, dieu_so) -> result dict
-    
-    for query in queries:
-        try:
-            query_embedding = get_embedding(query)
-            client = get_qdrant_client()
-            response = client.query_points(
-                collection_name=Config.QDRANT_COLLECTION,
-                query=query_embedding.tolist(),
-                limit=top_k,
-                with_payload=True
-            )
-            
-            results = _parse_qdrant_results(response.points)
-            
+    merged: dict = {}
+
+    max_workers = min(len(queries), 8)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_query = {executor.submit(_single_query_search, q, top_k): q for q in queries}
+        for future in as_completed(future_to_query):
+            results = future.result()
             for r in results:
-                # Dedup key: prefer chunk_id, fallback to (doc, article)
                 dedup_key = r.get("chunk_id") or f"{r.get('doc_title')}_{r.get('dieu_so')}"
-                
                 if dedup_key not in merged or r["score"] > merged[dedup_key]["score"]:
                     merged[dedup_key] = r
-                    
-        except Exception as e:
-            logger.error(f"[Error] Multi-query search failed for query '{query[:50]}...': {e}")
-            continue
-    
-    # Sort by score descending and return top results
+
     all_results = sorted(merged.values(), key=lambda x: x["score"], reverse=True)
-    
-    logger.info(f"[MultiQuery] {len(queries)} queries → {len(all_results)} unique chunks (from {sum(1 for _ in queries)} searches)")
-    
-    return all_results[:top_k + 3]  # Return slightly more to ensure diversity
+    logger.info(f"[MultiQuery] {len(queries)} parallel queries → {len(all_results)} unique chunks")
+    return all_results[:top_k + 3]
 
 
 def _parse_qdrant_results(search_result) -> list:

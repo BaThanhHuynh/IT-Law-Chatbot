@@ -4,23 +4,30 @@ FastAPI app entry point for IT Law Chatbot.
 import warnings
 import uvicorn
 from typing import Optional
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from app.core.config import Config
 from app.core.logger import logger
+from app.core.security import verify_api_key
 from app.api.routes.chat import chat_router
 from app.services.chatbot.engine import generate_response
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
+limiter = Limiter(key_func=get_remote_address)
+_rate_limit = f"{Config.RATE_LIMIT_PER_MINUTE}/minute"
+
 
 class ChatQuery(BaseModel):
     """Request body cho endpoint /chat."""
-    query: str = Field(..., description="Câu hỏi pháp lý của người dùng", min_length=1)
+    query: str = Field(..., description="Câu hỏi pháp lý của người dùng", min_length=1, max_length=Config.MAX_QUERY_LENGTH)
     conversation_id: Optional[str] = Field(None, description="ID cuộc hội thoại (tùy chọn)")
 
 
@@ -39,13 +46,17 @@ def create_app():
         version="1.0.0"
     )
 
-    # CORS configuration
+    # Rate limiter state
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+    # CORS — restrict to configured origins (set ALLOWED_ORIGINS in .env)
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=Config.ALLOWED_ORIGINS,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type", "X-Api-Key"],
     )
 
     # Global Exception Handler
@@ -58,8 +69,9 @@ def create_app():
         )
 
     # ── /chat endpoint (đơn giản dành cho frontend) ──────────────────
-    @app.post("/chat", response_model=ChatAnswer, tags=["Chat"])
-    async def chat_endpoint(payload: ChatQuery):
+    @app.post("/chat", response_model=ChatAnswer, tags=["Chat"], dependencies=[Depends(verify_api_key)])
+    @limiter.limit(_rate_limit)
+    async def chat_endpoint(request: Request, payload: ChatQuery):
         """
         Nhận câu hỏi (query) từ frontend và trả về câu trả lời (answer)
         cùng nguồn tham khảo và dữ liệu Knowledge Graph.

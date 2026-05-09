@@ -5,6 +5,10 @@ from app.core.config import Config
 
 _model = None
 
+# LRU cache: maps text → embedding as tuple (hashable).
+# Capped at EMBEDDING_CACHE_SIZE to bound memory usage.
+_embedding_cache: dict = {}
+
 
 def get_model():
     """Lazy-load the embedding model."""
@@ -17,10 +21,23 @@ def get_model():
 
 
 def get_embedding(text: str) -> np.ndarray:
-    """Generate embedding vector for a text string."""
+    """Generate embedding vector for a text string, with in-memory LRU cache."""
+    global _embedding_cache
+    if text in _embedding_cache:
+        return _embedding_cache[text]
+
     model = get_model()
-    embedding = model.encode(text, normalize_embeddings=True)
-    return np.array(embedding, dtype=np.float32)
+    embedding = np.array(model.encode(text, normalize_embeddings=True), dtype=np.float32)
+
+    if len(_embedding_cache) < Config.EMBEDDING_CACHE_SIZE:
+        _embedding_cache[text] = embedding
+    else:
+        # Evict the oldest entry (insertion-order in Python 3.7+)
+        oldest_key = next(iter(_embedding_cache))
+        del _embedding_cache[oldest_key]
+        _embedding_cache[text] = embedding
+
+    return embedding
 
 
 def get_embeddings_batch(texts: list) -> list:

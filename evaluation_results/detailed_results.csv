@@ -1,0 +1,301 @@
+﻿idx,query,gold,rag_rank,kg_rank,hybrid_rank,hybrid_vector_rank,hybrid_kg_rank
+1,"Hoạt động bảo vệ an ninh quốc gia và bảo đảm trật tự, an toàn xã hội trên không gian mạng được điều chỉnh ra sao?",Lu_t_An_ninh_m_ng_2018_D1,3,2,4,3,2
+2,Phạm vi điều chỉnh và đối tượng áp dụng đối với an ninh mạng được quy định như thế nào?,Lu_t_An_ninh_m_ng_2025_D1,1,1,1,1,1
+3,"Phạm vi hoạt động an toàn thông tin mạng, mật mã dân sự, tiêu chuẩn kỹ thuật và kinh doanh trong lĩnh vực này được điều ",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D1,-1,-1,-1,-1,-1
+4,Phạm vi điều chỉnh và đối tượng áp dụng về dữ liệu cá nhân và bảo vệ dữ liệu cá nhân gồm những gì?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D1,-1,1,2,-1,1
+5,"Nguyên tắc, chính sách bảo vệ quyền lợi người tiêu dùng và trách nhiệm của tổ chức, cá nhân kinh doanh được điều chỉnh r",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D1,-1,-1,-1,-1,-1
+6,"Phạm vi điều chỉnh đối với phát triển công nghiệp công nghệ số, công nghiệp bán dẫn, trí tuệ nhân tạo và tài sản số gồm ",Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D1,-1,2,2,-1,2
+7,Phạm vi điều chỉnh hoạt động ứng dụng và phát triển công nghệ thông tin được quy định như thế nào?,Lu_t_C_ng_ngh_th_ng_tin_2006_D1,-1,1,1,-1,1
+8,"Phạm vi điều chỉnh đối với dữ liệu số, Trung tâm dữ liệu quốc gia và Cơ sở dữ liệu tổng hợp quốc gia gồm những nội dung ",Lu_t_D_li_u_2024_D1,-1,1,1,-1,1
+9,Phạm vi điều chỉnh đối với việc thực hiện giao dịch bằng phương tiện điện tử được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D1,-1,-1,-1,-1,-1
+10,"Phạm vi điều chỉnh đối với quyền tác giả, quyền liên quan, quyền sở hữu công nghiệp và quyền đối với giống cây trồng gồm",Lu_t_S_h_u_tr_tu_2005_D1,1,-1,1,1,-1
+11,Phạm vi điều chỉnh đối với hoạt động viễn thông và quản lý nhà nước về viễn thông gồm những nội dung gì?,Lu_t_Vi_n_th_ng_2023_D1,-1,3,3,-1,3
+12,Phạm vi điều chỉnh chi tiết về biện pháp bảo vệ an ninh mạng và lưu trữ dữ liệu được quy định ra sao?,Ngh_nh_quy_nh_chi_ti_t_Lu_t_An_ninh_m_ng_2018_D1,-1,3,3,-1,3
+13,"Phạm vi điều chỉnh hướng dẫn thi hành về quyền tác giả, quyền liên quan đối với phần mềm máy tính được quy định ra sao?",Ngh_nh_quy_nh_chi_ti_t_Lu_t_SHTT_v_quy_n_t_c_gi_ph_n_m_m_m_y_t_nh_D1,-1,1,1,-1,1
+14,"Phạm vi điều chỉnh việc quản lý, cung cấp, sử dụng dịch vụ Internet, tài nguyên Internet và thông tin trên mạng được quy",Ngh_nh_qu_n_l_cung_c_p_s_d_ng_d_ch_v_Internet_v_th_ng_tin_tr_n_m_ng_D1,1,1,1,1,1
+15,Phạm vi điều chỉnh và đối tượng áp dụng đối với bảo vệ dữ liệu cá nhân được quy định ra sao?,Ngh_nh_v_b_o_v_d_li_u_c_nh_n_D1,1,1,1,1,1
+16,"Phạm vi điều chỉnh chi tiết về tiêu chí, thẩm quyền, trình tự, thủ tục xác định cấp độ an toàn hệ thống thông tin gồm nh",Ngh_nh_v_b_o_m_an_to_n_h_th_ng_th_ng_tin_theo_c_p_D1,1,1,1,1,1
+17,"Phạm vi điều chỉnh về chữ ký số, chứng thư số và dịch vụ chứng thực chữ ký số gồm những nội dung gì?",Ngh_nh_v_ch_k_s_v_d_ch_v_tin_c_y_D1,-1,1,1,-1,1
+18,Phạm vi điều chỉnh hoạt động công nghiệp công nghệ thông tin và biện pháp bảo đảm phát triển ngành này được quy định ra ,Ngh_nh_v_c_ng_nghi_p_c_ng_ngh_th_ng_tin_D1,1,2,1,1,2
+19,"Phạm vi điều chỉnh về kinh doanh, xuất nhập khẩu sản phẩm, dịch vụ mật mã dân sự được quy định ra sao?",Ngh_nh_v_ho_t_ng_m_t_m_d_n_s_v_s_a_i_N_15_2020_D1,-1,-1,-1,-1,-1
+20,Phạm vi điều chỉnh hoạt động thanh toán không dùng tiền mặt gồm những nội dung gì?,Ngh_nh_v_thanh_to_n_kh_ng_d_ng_ti_n_m_t_D1,1,1,1,1,1
+21,"Phạm vi điều chỉnh về phát triển, ứng dụng và quản lý hoạt động thương mại điện tử được quy định ra sao?",Ngh_nh_v_th_ng_m_i_i_n_t_D1,-1,2,2,-1,2
+22,"Phạm vi điều chỉnh về hành vi vi phạm hành chính, hình thức xử phạt và biện pháp khắc phục hậu quả trong lĩnh vực bưu ch",Ngh_nh_x_ph_t_vi_ph_m_h_nh_ch_nh_l_nh_v_c_b_u_ch_nh_vi_n_th_ng_CNTT_D1,1,1,1,1,1
+23,An ninh mạng được định nghĩa là gì?,Lu_t_An_ninh_m_ng_2018_D2,1,1,1,1,1
+24,An ninh mạng và an ninh thông tin mạng được định nghĩa như thế nào?,Lu_t_An_ninh_m_ng_2025_D2,-1,2,2,-1,2
+25,Đối tượng áp dụng đối với hoạt động an toàn thông tin mạng tại Việt Nam gồm những ai?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D2,-1,1,1,-1,1
+26,Dữ liệu cá nhân và dữ liệu cá nhân cơ bản được định nghĩa ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D2,1,1,1,1,1
+27,"Đối tượng áp dụng đối với người tiêu dùng và tổ chức, cá nhân kinh doanh gồm những ai?",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D2,-1,2,2,-1,2
+28,Đối tượng áp dụng đối với hoạt động công nghiệp công nghệ số tại Việt Nam là những ai?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D2,-1,-1,-1,-1,-1
+29,Đối tượng áp dụng trong hoạt động ứng dụng và phát triển công nghệ thông tin tại Việt Nam là những ai?,Lu_t_C_ng_ngh_th_ng_tin_2006_D2,-1,2,2,-1,2
+30,Đối tượng áp dụng đối với hoạt động dữ liệu số tại Việt Nam gồm những ai?,Lu_t_D_li_u_2024_D2,-1,-1,-1,-1,-1
+31,Đối tượng áp dụng đối với chủ thể tham gia giao dịch điện tử là những ai?,Lu_t_Giao_d_ch_i_n_t_2023_D2,-1,4,4,-1,4
+32,"Đối tượng áp dụng về sở hữu trí tuệ đối với tổ chức, cá nhân trong và ngoài nước là những ai?",Lu_t_S_h_u_tr_tu_2005_D2,-1,-1,-1,-1,-1
+33,Đối tượng áp dụng trong hoạt động viễn thông tại Việt Nam là những ai?,Lu_t_Vi_n_th_ng_2023_D2,-1,4,4,-1,4
+34,Dữ liệu về thông tin cá nhân được định nghĩa ra sao?,Ngh_nh_quy_nh_chi_ti_t_Lu_t_An_ninh_m_ng_2018_D2,-1,-1,-1,-1,-1
+35,"Đối tượng áp dụng gồm tác giả, chủ sở hữu quyền tác giả và những bên liên quan nào?",Ngh_nh_quy_nh_chi_ti_t_Lu_t_SHTT_v_quy_n_t_c_gi_ph_n_m_m_m_y_t_nh_D2,-1,-1,-1,-1,-1
+36,"Đối tượng áp dụng đối với việc quản lý, cung cấp, sử dụng dịch vụ Internet và thông tin trên mạng gồm những ai?",Ngh_nh_qu_n_l_cung_c_p_s_d_ng_d_ch_v_Internet_v_th_ng_tin_tr_n_m_ng_D2,1,1,1,1,1
+37,Dữ liệu cá nhân và dữ liệu cá nhân cơ bản được định nghĩa như thế nào?,Ngh_nh_v_b_o_v_d_li_u_c_nh_n_D2,-1,1,2,-1,1
+38,Đối tượng áp dụng quy định về bảo đảm an toàn hệ thống thông tin theo cấp độ là những ai?,Ngh_nh_v_b_o_m_an_to_n_h_th_ng_th_ng_tin_theo_c_p_D2,1,1,1,1,1
+39,"Đối tượng áp dụng quản lý, cung cấp dịch vụ chứng thực chữ ký số gồm những cơ quan, tổ chức nào?",Ngh_nh_v_ch_k_s_v_d_ch_v_tin_c_y_D2,-1,5,5,-1,5
+40,Đối tượng áp dụng tham gia hoạt động công nghiệp công nghệ thông tin trên lãnh thổ Việt Nam gồm những ai?,Ngh_nh_v_c_ng_nghi_p_c_ng_ngh_th_ng_tin_D2,-1,1,1,-1,1
+41,"Đối tượng áp dụng quy định về kinh doanh, xuất nhập khẩu sản phẩm, dịch vụ mật mã dân sự là những doanh nghiệp, tổ chức ",Ngh_nh_v_ho_t_ng_m_t_m_d_n_s_v_s_a_i_N_15_2020_D2,-1,-1,-1,-1,-1
+42,"Đối tượng áp dụng đối với hoạt động cung ứng và sử dụng dịch vụ thanh toán không dùng tiền mặt gồm những tổ chức, cá nhâ",Ngh_nh_v_thanh_to_n_kh_ng_d_ng_ti_n_m_t_D2,1,1,1,1,1
+43,"Đối tượng áp dụng đối với thương nhân, tổ chức, cá nhân tham gia hoạt động thương mại điện tử trên lãnh thổ Việt Nam là ",Ngh_nh_v_th_ng_m_i_i_n_t_D2,1,3,1,1,3
+44,"Đối tượng bị xử phạt vi phạm hành chính trong lĩnh vực bưu chính, viễn thông và công nghệ thông tin là những ai?",Ngh_nh_x_ph_t_vi_ph_m_h_nh_ch_nh_l_nh_v_c_b_u_ch_nh_vi_n_th_ng_CNTT_D2,1,1,1,1,1
+45,Chính sách của Nhà nước về an ninh mạng có những nội dung ưu tiên nào?,Lu_t_An_ninh_m_ng_2018_D3,-1,2,2,-1,2
+46,Định hướng xây dựng không gian mạng lành mạnh và ưu tiên nguồn lực cho an ninh mạng được nêu ra sao?,Lu_t_An_ninh_m_ng_2025_D3,1,2,1,1,2
+47,An toàn thông tin mạng được định nghĩa là gì?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D3,1,-1,1,1,-1
+48,Nguyên tắc bảo vệ dữ liệu cá nhân gồm những nguyên tắc nào?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D3,-1,1,2,-1,1
+49,Người tiêu dùng được định nghĩa là ai?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D3,1,1,1,1,1
+50,Công nghệ số và công nghiệp công nghệ số được định nghĩa ra sao?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D3,1,2,1,1,2
+51,Nguyên tắc bảo vệ an ninh mạng được quy định như thế nào?,Lu_t_An_ninh_m_ng_2018_D4,1,1,1,1,1
+52,Các hành vi nào bị nghiêm cấm về an ninh mạng?,Lu_t_An_ninh_m_ng_2018_D8,3,1,2,3,1
+53,Nguyên tắc bảo vệ an ninh mạng bao gồm những nguyên tắc gì?,Lu_t_An_ninh_m_ng_2025_D4,2,1,2,2,1
+54,Phân loại cấp độ hệ thống thông tin được thực hiện như thế nào?,Lu_t_An_ninh_m_ng_2025_D8,1,1,1,1,1
+55,Nguyên tắc bảo đảm an toàn thông tin mạng được nêu ra sao?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D4,1,1,1,1,1
+56,Các hành vi nào bị nghiêm cấm trong lĩnh vực an toàn thông tin mạng?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D7,1,1,1,1,1
+57,Quyền và nghĩa vụ của chủ thể dữ liệu cá nhân gồm những gì?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D4,1,1,1,1,1
+58,Việc xử lý vi phạm pháp luật về bảo vệ dữ liệu cá nhân được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D8,-1,2,2,-1,2
+59,Quyền của người tiêu dùng bao gồm những quyền nào?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D4,1,1,1,1,1
+60,Các hành vi nào bị nghiêm cấm trong bảo vệ quyền lợi người tiêu dùng?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D10,1,1,1,1,1
+61,Chính sách phát triển công nghiệp công nghệ số gồm những nội dung gì?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D4,1,1,1,1,1
+62,Các hành vi nào bị nghiêm cấm trong lĩnh vực công nghệ thông tin?,Lu_t_C_ng_ngh_th_ng_tin_2006_D12,1,-1,1,1,-1
+63,Việc áp dụng pháp luật về dữ liệu được quy định ra sao?,Lu_t_D_li_u_2024_D4,-1,1,1,-1,1
+64,Nội dung quản lý nhà nước về dữ liệu bao gồm những gì?,Lu_t_D_li_u_2024_D8,1,1,1,1,1
+65,Chính sách phát triển giao dịch điện tử được quy định như thế nào?,Lu_t_Giao_d_ch_i_n_t_2023_D4,-1,1,1,-1,1
+66,Thông điệp dữ liệu có giá trị như văn bản giấy được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D9,-1,-1,-1,-1,-1
+67,Quyền sở hữu trí tuệ được giải thích bao gồm những nội dung nào?,Lu_t_S_h_u_tr_tu_2005_D4,-1,-1,-1,-1,-1
+68,Hành vi xâm phạm quyền tác giả gồm những hành vi nào?,Lu_t_S_h_u_tr_tu_2005_D28,1,-1,1,1,-1
+69,Chính sách của Nhà nước về viễn thông được quy định như thế nào?,Lu_t_Vi_n_th_ng_2023_D4,-1,1,1,-1,1
+70,Hoạt động đầu tư trong kinh doanh dịch vụ viễn thông được quy định ra sao?,Lu_t_Vi_n_th_ng_2023_D12,1,1,1,1,1
+71,Việc lập hồ sơ đề nghị đưa hệ thống thông tin vào Danh mục hệ thống thông tin quan trọng về an ninh quốc gia được thực h,Ngh_nh_quy_nh_chi_ti_t_Lu_t_An_ninh_m_ng_2018_D4,1,1,1,1,1
+72,"Trình tự, thủ tục ứng phó, khắc phục sự cố an ninh mạng đối với hệ thống thông tin quan trọng về an ninh quốc gia được q",Ngh_nh_quy_nh_chi_ti_t_Lu_t_An_ninh_m_ng_2018_D17,1,1,1,1,1
+73,"Chính sách của Nhà nước về quyền tác giả, quyền liên quan gồm những nội dung gì?",Ngh_nh_quy_nh_chi_ti_t_Lu_t_SHTT_v_quy_n_t_c_gi_ph_n_m_m_m_y_t_nh_D4,-1,5,5,-1,5
+74,Việc trích dẫn hợp lý tác phẩm phải đáp ứng những điều kiện nào?,Ngh_nh_quy_nh_chi_ti_t_Lu_t_SHTT_v_quy_n_t_c_gi_ph_n_m_m_m_y_t_nh_D28,-1,-1,-1,-1,-1
+75,"Chính sách phát triển và quản lý Internet, thông tin trên mạng gồm những nội dung gì?",Ngh_nh_qu_n_l_cung_c_p_s_d_ng_d_ch_v_Internet_v_th_ng_tin_tr_n_m_ng_D4,1,1,1,1,1
+76,Điều kiện hoạt động của điểm truy nhập Internet công cộng được quy định ra sao?,Ngh_nh_qu_n_l_cung_c_p_s_d_ng_d_ch_v_Internet_v_th_ng_tin_tr_n_m_ng_D5,1,-1,1,1,-1
+77,Việc xử lý vi phạm quy định bảo vệ dữ liệu cá nhân được thực hiện như thế nào?,Ngh_nh_v_b_o_v_d_li_u_c_nh_n_D4,-1,1,1,-1,1
+78,Các hành vi nào bị nghiêm cấm trong xử lý dữ liệu cá nhân?,Ngh_nh_v_b_o_v_d_li_u_c_nh_n_D8,2,1,2,2,1
+79,Nguyên tắc bảo đảm an toàn hệ thống thông tin theo cấp độ gồm những nguyên tắc gì?,Ngh_nh_v_b_o_m_an_to_n_h_th_ng_th_ng_tin_theo_c_p_D4,1,1,1,1,1
+80,Nguyên tắc xác định cấp độ an toàn hệ thống thông tin được quy định ra sao?,Ngh_nh_v_b_o_m_an_to_n_h_th_ng_th_ng_tin_theo_c_p_D5,1,2,1,1,2
+81,Dịch vụ chứng thực chữ ký số được quy định gồm những loại nào?,Ngh_nh_v_ch_k_s_v_d_ch_v_tin_c_y_D4,1,1,1,1,1
+82,Giá trị pháp lý của chữ ký số được quy định như thế nào?,Ngh_nh_v_ch_k_s_v_d_ch_v_tin_c_y_D8,-1,2,2,-1,2
+83,Nội dung quản lý nhà nước về công nghiệp công nghệ thông tin gồm những gì?,Ngh_nh_v_c_ng_nghi_p_c_ng_ngh_th_ng_tin_D4,1,1,1,1,1
+84,"Việc áp dụng Danh mục sản phẩm mật mã dân sự xuất khẩu, nhập khẩu theo giấy phép được quy định ra sao?",Ngh_nh_v_ho_t_ng_m_t_m_d_n_s_v_s_a_i_N_15_2020_D4,1,-1,1,1,-1
+85,Cơ quan nào chịu trách nhiệm quản lý hoạt động đánh giá sự phù hợp sản phẩm mật mã dân sự?,Ngh_nh_v_ho_t_ng_m_t_m_d_n_s_v_s_a_i_N_15_2020_D8,1,1,1,1,1
+86,Trách nhiệm quản lý nhà nước của Ngân hàng Nhà nước về thanh toán không dùng tiền mặt gồm những nội dung gì?,Ngh_nh_v_thanh_to_n_kh_ng_d_ng_ti_n_m_t_D4,1,1,1,1,1
+87,Ví điện tử và thẻ trả trước được quy định như thế nào?,Ngh_nh_v_thanh_to_n_kh_ng_d_ng_ti_n_m_t_D6,-1,-1,-1,-1,-1
+88,Các hành vi nào bị cấm trong hoạt động thương mại điện tử?,Ngh_nh_v_th_ng_m_i_i_n_t_D4,1,1,1,1,1
+89,Chứng từ điện tử có giá trị pháp lý như bản gốc khi đáp ứng những điều kiện nào?,Ngh_nh_v_th_ng_m_i_i_n_t_D9,-1,-1,-1,-1,-1
+90,Hình thức xử phạt vi phạm hành chính và biện pháp khắc phục hậu quả gồm những hình thức nào?,Ngh_nh_x_ph_t_vi_ph_m_h_nh_ch_nh_l_nh_v_c_b_u_ch_nh_vi_n_th_ng_CNTT_D3,-1,4,4,-1,4
+91,"Mức phạt tiền và thẩm quyền phạt tiền đối với cá nhân, tổ chức được quy định ra sao?",Ngh_nh_x_ph_t_vi_ph_m_h_nh_ch_nh_l_nh_v_c_b_u_ch_nh_vi_n_th_ng_CNTT_D4,-1,1,1,-1,1
+92,Hành vi vi phạm các quy định về Giấy phép bưu chính bị xử phạt như thế nào?,Ngh_nh_x_ph_t_vi_ph_m_h_nh_ch_nh_l_nh_v_c_b_u_ch_nh_vi_n_th_ng_CNTT_D5,1,1,1,1,1
+93,Hành vi vi phạm quy định về thông báo hoạt động bưu chính bị xử phạt ra sao?,Ngh_nh_x_ph_t_vi_ph_m_h_nh_ch_nh_l_nh_v_c_b_u_ch_nh_vi_n_th_ng_CNTT_D6,1,1,1,1,1
+94,Hoạt động giám sát an ninh mạng đối với hệ thống thông tin quan trọng về an ninh quốc gia được thực hiện như thế nào?,Lu_t_An_ninh_m_ng_2018_D14,1,1,1,1,1
+95,Bảo đảm an ninh thông tin trên không gian mạng đối với doanh nghiệp cung cấp dịch vụ được quy định ra sao?,Lu_t_An_ninh_m_ng_2018_D26,1,1,1,1,1
+96,Chính sách của Nhà nước về an toàn thông tin mạng gồm những nội dung gì?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D5,1,1,1,1,1
+97,Việc áp dụng pháp luật về bảo vệ dữ liệu cá nhân được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D5,2,1,2,2,1
+98,Bảo vệ quyền lợi người tiêu dùng trong giao dịch với cá nhân hoạt động thương mại độc lập được quy định ra sao?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D9,1,1,1,1,1
+99,Nội dung quản lý nhà nước về công nghệ thông tin bao gồm những gì?,Lu_t_C_ng_ngh_th_ng_tin_2006_D6,1,1,1,1,1
+100,Chính sách của Nhà nước về dữ liệu được quy định như thế nào?,Lu_t_D_li_u_2024_D6,1,1,1,1,1
+101,Lực lượng bảo vệ an ninh mạng bao gồm những thành phần nào?,Lu_t_An_ninh_m_ng_2018_D30,-1,2,2,-1,2
+102,"Việc ứng phó, khắc phục sự cố an ninh mạng đối với hệ thống thông tin quan trọng về an ninh quốc gia được thực hiện ra s",Lu_t_An_ninh_m_ng_2018_D15,2,1,2,2,1
+103,Hệ thống thông tin quan trọng về an ninh quốc gia được xác định gồm những loại nào?,Lu_t_An_ninh_m_ng_2018_D10,-1,3,4,-1,3
+104,Hoạt động thẩm định an ninh mạng đối với hệ thống thông tin quan trọng về an ninh quốc gia được thực hiện như thế nào?,Lu_t_An_ninh_m_ng_2018_D11,-1,3,3,-1,3
+105,"Phòng ngừa, xử lý thông tin trên không gian mạng có nội dung tuyên truyền chống Nhà nước được quy định ra sao?",Lu_t_An_ninh_m_ng_2018_D16,1,2,1,1,2
+106,"Phòng, chống gián điệp mạng và bảo vệ thông tin thuộc bí mật nhà nước trên không gian mạng được quy định như thế nào?",Lu_t_An_ninh_m_ng_2018_D17,1,1,1,1,1
+107,"Phòng, chống hành vi sử dụng không gian mạng để vi phạm pháp luật về an ninh quốc gia được thực hiện ra sao?",Lu_t_An_ninh_m_ng_2018_D18,1,1,1,1,1
+108,"Phòng, chống tấn công mạng được quy định gồm những nội dung gì?",Lu_t_An_ninh_m_ng_2018_D19,-1,1,2,-1,1
+109,"Phòng, chống khủng bố mạng được thực hiện như thế nào?",Lu_t_An_ninh_m_ng_2018_D20,1,2,1,1,2
+110,Hợp tác quốc tế về an ninh mạng được thực hiện theo nguyên tắc nào?,Lu_t_An_ninh_m_ng_2018_D7,4,3,3,4,3
+111,"Phòng, chống gián điệp mạng và bảo vệ bí mật cá nhân, đời sống riêng tư trên không gian mạng được quy định ra sao?",Lu_t_An_ninh_m_ng_2018_D17,1,1,1,1,1
+112,"Bảo đảm an ninh thông tin trên không gian mạng đối với doanh nghiệp cung cấp dịch vụ viễn thông, Internet được quy định ",Lu_t_An_ninh_m_ng_2018_D26,1,1,1,1,1
+113,"Phòng, chống xâm hại trẻ em trên không gian mạng được quy định như thế nào?",Lu_t_An_ninh_m_ng_2025_D16,1,1,1,1,1
+114,"Việc kinh doanh sản phẩm, dịch vụ an ninh mạng được quy định ra sao?",Lu_t_An_ninh_m_ng_2025_D29,1,1,1,1,1
+115,Nhiệm vụ và biện pháp bảo vệ an ninh mạng đối với hệ thống thông tin gồm những nội dung gì?,Lu_t_An_ninh_m_ng_2025_D10,1,2,1,1,2
+116,Trách nhiệm bảo vệ an ninh mạng đối với hệ thống thông tin quan trọng về an ninh quốc gia được quy định ra sao?,Lu_t_An_ninh_m_ng_2025_D11,1,1,1,1,1
+117,"Phòng, chống gián điệp mạng và bảo vệ thông tin bí mật trên không gian mạng được quy định như thế nào?",Lu_t_An_ninh_m_ng_2025_D15,3,2,4,3,2
+118,"Phòng, chống tấn công mạng được quy định ra sao?",Lu_t_An_ninh_m_ng_2025_D18,1,2,1,1,2
+119,"Phòng ngừa, xử lý tình huống nguy hiểm về an ninh mạng được thực hiện như thế nào?",Lu_t_An_ninh_m_ng_2025_D20,1,1,1,1,1
+120,Các hành vi nào bị nghiêm cấm về an ninh mạng?,Lu_t_An_ninh_m_ng_2025_D7,1,2,1,1,2
+121,Việc phân loại thông tin theo thuộc tính bí mật được thực hiện ra sao?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D9,-1,1,1,-1,1
+122,Việc thu thập và sử dụng thông tin cá nhân được quy định như thế nào?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D17,1,1,1,1,1
+123,Việc quản lý gửi thông tin được quy định ra sao?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D10,-1,1,1,-1,1
+124,Việc bảo đảm an toàn thông tin cá nhân trên mạng được quy định như thế nào?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D19,1,1,1,1,1
+125,"Việc cập nhật, sửa đổi và hủy bỏ thông tin cá nhân được thực hiện ra sao?",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D18,-1,1,1,-1,1
+126,"Sản phẩm, dịch vụ trong lĩnh vực an toàn thông tin mạng bao gồm những loại nào?",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D41,2,3,3,2,3
+127,"Đánh giá hợp chuẩn, hợp quy về an toàn thông tin mạng được thực hiện ra sao?",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D39,1,1,1,1,1
+128,Hoạt động kinh doanh trong lĩnh vực an toàn thông tin mạng được quy định ra sao?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D40,1,1,1,1,1
+129,"Điều kiện cấp Giấy phép kinh doanh sản phẩm, dịch vụ an toàn thông tin mạng gồm những gì?",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D42,1,1,1,1,1
+130,"Việc thẩm định hồ sơ và cấp Giấy phép kinh doanh sản phẩm, dịch vụ an toàn thông tin mạng được thực hiện ra sao?",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D44,1,2,1,1,2
+131,Việc rút lại sự đồng ý và hạn chế xử lý dữ liệu cá nhân được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D10,1,1,1,1,1
+132,"Việc thu thập, phân tích, tổng hợp dữ liệu cá nhân được quy định như thế nào?",Lu_t_B_o_v_d_li_u_c_nh_n_2025_D11,1,1,1,1,1
+133,"Việc mã hóa, giải mã dữ liệu cá nhân được quy định ra sao?",Lu_t_B_o_v_d_li_u_c_nh_n_2025_D12,-1,1,1,-1,1
+134,Việc chỉnh sửa dữ liệu cá nhân được thực hiện trong những trường hợp nào?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D13,-1,2,2,-1,2
+135,"Việc xóa, hủy, khử nhận dạng dữ liệu cá nhân được quy định ra sao?",Lu_t_B_o_v_d_li_u_c_nh_n_2025_D14,1,1,1,1,1
+136,Việc cung cấp dữ liệu cá nhân được quy định như thế nào?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D15,-1,2,4,-1,2
+137,Việc công khai dữ liệu cá nhân được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D16,1,1,1,1,1
+138,Việc chuyển giao dữ liệu cá nhân được quy định như thế nào?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D17,1,1,1,1,1
+139,Các hoạt động khác trong xử lý dữ liệu cá nhân gồm những gì?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D18,1,1,1,1,1
+140,Việc xử lý dữ liệu cá nhân không cần sự đồng ý của chủ thể dữ liệu được áp dụng trong những trường hợp nào?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D19,-1,2,2,-1,2
+141,Việc chuyển dữ liệu cá nhân xuyên biên giới được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D20,1,1,1,1,1
+142,Đánh giá tác động xử lý dữ liệu cá nhân được thực hiện như thế nào?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D21,-1,3,4,-1,3
+143,Việc cập nhật hồ sơ đánh giá tác động xử lý và chuyển dữ liệu cá nhân xuyên biên giới được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D22,1,1,1,1,1
+144,Việc thông báo vi phạm quy định về bảo vệ dữ liệu cá nhân được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D23,-1,1,2,-1,1
+145,Bảo vệ dữ liệu cá nhân của trẻ em và người có khó khăn nhận thức được quy định như thế nào?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D24,-1,2,2,-1,2
+146,Bảo vệ dữ liệu cá nhân trong tuyển dụng và quản lý người lao động được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D25,1,1,1,1,1
+147,Bảo vệ dữ liệu cá nhân đối với thông tin sức khỏe và trong kinh doanh bảo hiểm được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D26,1,1,1,1,1
+148,"Bảo vệ dữ liệu cá nhân trong hoạt động tài chính, ngân hàng và thông tin tín dụng được quy định ra sao?",Lu_t_B_o_v_d_li_u_c_nh_n_2025_D27,1,1,1,1,1
+149,Bảo vệ dữ liệu cá nhân trong kinh doanh dịch vụ quảng cáo được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D28,1,1,1,1,1
+150,Nghĩa vụ của người tiêu dùng được quy định như thế nào?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D5,1,1,1,1,1
+151,Nguyên tắc bảo vệ quyền lợi người tiêu dùng được quy định ra sao?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D6,1,1,1,1,1
+152,Chính sách của Nhà nước về bảo vệ quyền lợi người tiêu dùng gồm những gì?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D7,1,1,1,1,1
+153,Bảo vệ quyền lợi người tiêu dùng dễ bị tổn thương được quy định ra sao?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D8,1,2,1,1,2
+154,Quyền yêu cầu cơ quan nhà nước xử lý vi phạm liên quan đến quyền lợi người tiêu dùng được quy định ra sao?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D11,1,1,1,1,1
+155,"Việc cung cấp thông tin về sản phẩm, hàng hóa, dịch vụ, hợp đồng theo mẫu cho người tiêu dùng được quy định ra sao?",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D21,-1,1,1,-1,1
+156,"Bảo hành sản phẩm, hàng hóa, linh kiện, phụ kiện được quy định như thế nào?",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D30,-1,1,1,-1,1
+157,Việc thực hiện điều kiện giao dịch chung được quy định ra sao?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D27,-1,-1,-1,-1,-1
+158,Hợp đồng tham gia bán hàng đa cấp được quy định như thế nào?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D46,1,1,1,1,1
+159,Trách nhiệm của Mặt trận Tổ quốc Việt Nam và tổ chức chính trị - xã hội trong bảo vệ người tiêu dùng là gì?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D48,1,-1,1,1,-1
+160,Quản lý nhà nước về công nghiệp công nghệ số bao gồm những nội dung gì?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D5,1,1,1,1,1
+161,Hợp tác quốc tế về công nghiệp công nghệ số được thực hiện ra sao?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D6,1,1,1,1,1
+162,Quản lý chất lượng trong hoạt động công nghiệp công nghệ số được quy định như thế nào?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D7,1,1,1,1,1
+163,"Việc thử nghiệm có kiểm soát sản phẩm, dịch vụ ứng dụng công nghệ số được quy định ra sao?",Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D8,-1,1,1,-1,1
+164,Chương trình phát triển công nghiệp công nghệ số gồm những nội dung gì?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D9,1,1,1,1,1
+165,"Bảo đảm an toàn, an ninh mạng trong hoạt động công nghiệp công nghệ số được quy định ra sao?",Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D10,1,1,1,1,1
+166,Tài chính cho phát triển công nghiệp công nghệ số được quy định như thế nào?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D11,1,1,1,1,1
+167,Các hành vi nào bị nghiêm cấm trong lĩnh vực công nghiệp công nghệ số?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D12,1,1,1,1,1
+168,Hoạt động công nghiệp công nghệ số bao gồm những hoạt động nào?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D13,2,4,3,2,4
+169,"Sản phẩm, dịch vụ công nghệ số trọng điểm được quy định gồm những loại nào?",Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D14,-1,1,1,-1,1
+170,Nguyên tắc chung về hoạt động ứng dụng công nghệ thông tin gồm những gì?,Lu_t_C_ng_ngh_th_ng_tin_2006_D13,1,1,1,1,1
+171,Việc ưu tiên ứng dụng công nghệ thông tin trong trường hợp khẩn cấp được quy định ra sao?,Lu_t_C_ng_ngh_th_ng_tin_2006_D14,-1,1,1,-1,1
+172,Việc quản lý và sử dụng thông tin số được quy định như thế nào?,Lu_t_C_ng_ngh_th_ng_tin_2006_D15,1,1,1,1,1
+173,Việc truyền đưa thông tin số được quy định ra sao?,Lu_t_C_ng_ngh_th_ng_tin_2006_D16,1,1,1,1,1
+174,Việc lưu trữ tạm thời thông tin số được quy định ra sao?,Lu_t_C_ng_ngh_th_ng_tin_2006_D17,1,1,1,1,1
+175,Việc cho thuê chỗ lưu trữ thông tin số được quy định như thế nào?,Lu_t_C_ng_ngh_th_ng_tin_2006_D18,1,1,1,1,1
+176,Công cụ tìm kiếm thông tin số được quy định ra sao?,Lu_t_C_ng_ngh_th_ng_tin_2006_D19,1,1,1,1,1
+177,"Việc theo dõi, giám sát nội dung thông tin số được quy định như thế nào?",Lu_t_C_ng_ngh_th_ng_tin_2006_D20,-1,1,1,-1,1
+178,"Việc thu thập, xử lý và sử dụng thông tin cá nhân trên môi trường mạng được quy định ra sao?",Lu_t_C_ng_ngh_th_ng_tin_2006_D21,1,1,1,1,1
+179,"Việc lưu trữ, cung cấp thông tin cá nhân trên môi trường mạng được quy định ra sao?",Lu_t_C_ng_ngh_th_ng_tin_2006_D22,1,1,1,1,1
+180,Hợp tác quốc tế về dữ liệu được thực hiện ra sao?,Lu_t_D_li_u_2024_D7,-1,1,1,-1,1
+181,Quản lý nhà nước về dữ liệu bao gồm những nội dung gì?,Lu_t_D_li_u_2024_D8,1,1,1,1,1
+182,"Việc xây dựng, phát triển dữ liệu trong các cơ quan Đảng và tổ chức chính trị - xã hội được quy định ra sao?",Lu_t_D_li_u_2024_D9,-1,1,1,-1,1
+183,Các hành vi nào bị nghiêm cấm liên quan đến dữ liệu?,Lu_t_D_li_u_2024_D10,1,-1,1,1,-1
+184,"Việc thu thập, tạo lập dữ liệu được quy định như thế nào?",Lu_t_D_li_u_2024_D11,1,1,1,1,1
+185,Việc bảo đảm chất lượng dữ liệu được quy định ra sao?,Lu_t_D_li_u_2024_D12,1,1,1,1,1
+186,Phân loại dữ liệu được quy định như thế nào?,Lu_t_D_li_u_2024_D13,1,1,1,1,1
+187,Hoạt động lưu trữ dữ liệu được quy định ra sao?,Lu_t_D_li_u_2024_D14,-1,1,1,-1,1
+188,"Việc quản trị, quản lý dữ liệu được quy định như thế nào?",Lu_t_D_li_u_2024_D15,-1,1,1,-1,1
+189,"Việc truy cập, truy xuất dữ liệu được quy định ra sao?",Lu_t_D_li_u_2024_D16,-1,1,1,-1,1
+190,Việc bảo đảm an toàn thông tin mạng và an ninh mạng trong giao dịch điện tử được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D5,-1,1,1,-1,1
+191,Các hành vi nào bị nghiêm cấm trong giao dịch điện tử?,Lu_t_Giao_d_ch_i_n_t_2023_D6,1,1,1,1,1
+192,Hình thức thể hiện của thông điệp dữ liệu được quy định như thế nào?,Lu_t_Giao_d_ch_i_n_t_2023_D7,-1,-1,-1,-1,-1
+193,Giá trị pháp lý của thông điệp dữ liệu được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D8,-1,-1,-1,-1,-1
+194,Chữ ký điện tử được quy định gồm những loại nào?,Lu_t_Giao_d_ch_i_n_t_2023_D22,1,1,1,1,1
+195,Giá trị pháp lý của chữ ký điện tử được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D23,1,1,1,1,1
+196,Dịch vụ chứng thực chữ ký số chuyên dùng công vụ được quy định như thế nào?,Lu_t_Giao_d_ch_i_n_t_2023_D24,-1,1,1,-1,1
+197,Việc sử dụng chữ ký điện tử chuyên dùng và chữ ký điện tử chuyên dùng bảo đảm an toàn được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D25,1,1,1,1,1
+198,Việc công nhận tổ chức cung cấp dịch vụ chứng thực chữ ký điện tử nước ngoài được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D26,1,2,1,1,2
+199,Chữ ký điện tử nước ngoài được chấp nhận trong giao dịch quốc tế khi nào?,Lu_t_Giao_d_ch_i_n_t_2023_D27,1,1,1,1,1
+200,"Phòng ngừa, xử lý thông tin trên không gian mạng có nội dung tuyên truyền chống Nhà nước được quy định ra sao?",Lu_t_An_ninh_m_ng_2018_D16,1,2,1,1,2
+201,Bảo đảm an ninh thông tin trên không gian mạng đối với doanh nghiệp được quy định như thế nào?,Lu_t_An_ninh_m_ng_2018_D26,1,1,1,1,1
+202,"Phòng, chống gián điệp mạng và bảo vệ bí mật trên không gian mạng được quy định ra sao?",Lu_t_An_ninh_m_ng_2018_D17,1,1,1,1,1
+203,Việc xử lý vi phạm pháp luật về an ninh mạng được quy định ra sao?,Lu_t_An_ninh_m_ng_2018_D9,-1,1,1,-1,1
+204,Lực lượng bảo vệ an ninh mạng gồm những thành phần nào?,Lu_t_An_ninh_m_ng_2018_D30,-1,2,2,-1,2
+205,Việc bảo đảm an ninh thông tin mạng được quy định ra sao?,Lu_t_An_ninh_m_ng_2025_D25,-1,1,1,-1,1
+206,Hoạt động đấu tranh bảo vệ an ninh mạng được quy định như thế nào?,Lu_t_An_ninh_m_ng_2025_D21,2,5,3,2,5
+207,"Việc kiểm tra an ninh mạng đối với hệ thống thông tin của cơ quan, tổ chức không thuộc danh mục quan trọng quốc gia được",Lu_t_An_ninh_m_ng_2025_D12,4,1,2,4,1
+208,"Phòng, chống xâm hại trẻ em trên không gian mạng được quy định như thế nào?",Lu_t_An_ninh_m_ng_2025_D16,1,1,1,1,1
+209,"Phòng ngừa, phát hiện, ngăn chặn và xử lý phần mềm độc hại được quy định ra sao?",Lu_t_An_ninh_m_ng_2025_D17,2,2,3,2,2
+210,"Việc quản lý tiêu chuẩn, quy chuẩn kỹ thuật an toàn thông tin mạng được quy định ra sao?",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D38,1,1,1,1,1
+211,"Tiêu chuẩn, quy chuẩn kỹ thuật an toàn thông tin mạng được quy định gồm những loại nào?",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D37,1,1,1,1,1
+212,"Việc thẩm định hồ sơ và cấp Giấy phép kinh doanh sản phẩm, dịch vụ an toàn thông tin mạng được quy định ra sao?",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D44,1,2,1,1,2
+213,"Việc sửa đổi, bổ sung, gia hạn, tạm đình chỉ và thu hồi Giấy phép kinh doanh sản phẩm, dịch vụ an toàn thông tin mạng đư",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D45,1,1,1,1,1
+214,"Trách nhiệm của doanh nghiệp kinh doanh sản phẩm, dịch vụ an toàn thông tin mạng được quy định ra sao?",Lu_t_An_to_n_th_ng_tin_m_ng_2015_D46,1,1,1,1,1
+215,Sự đồng ý của chủ thể dữ liệu cá nhân được quy định như thế nào?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D9,1,1,1,1,1
+216,Nguyên tắc bảo vệ dữ liệu cá nhân gồm những nguyên tắc gì?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D3,-1,1,2,-1,1
+217,Việc công khai dữ liệu cá nhân được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D16,1,1,1,1,1
+218,Việc cập nhật hồ sơ đánh giá tác động xử lý và chuyển dữ liệu cá nhân xuyên biên giới được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D22,1,1,1,1,1
+219,Bảo vệ dữ liệu cá nhân trong kinh doanh dịch vụ quảng cáo được quy định ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D28,1,1,1,1,1
+220,Hợp tác quốc tế trong bảo vệ quyền lợi người tiêu dùng được thực hiện ra sao?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D12,1,1,1,1,1
+221,"Hợp đồng giao kết với người tiêu dùng, hợp đồng theo mẫu và điều kiện giao dịch chung được quy định ra sao?",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D23,1,1,1,1,1
+222,"Việc giải thích hợp đồng giao kết với người tiêu dùng, hợp đồng theo mẫu được quy định ra sao?",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D24,1,1,1,1,1
+223,"Trách nhiệm của bên thứ ba trong việc cung cấp thông tin về sản phẩm, hàng hóa, dịch vụ cho người tiêu dùng là gì?",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D22,1,1,1,1,1
+224,"Điều khoản nào không được phép quy định trong hợp đồng giao kết với người tiêu dùng, hợp đồng theo mẫu, điều kiện giao d",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D25,1,1,1,1,1
+225,"Sản phẩm, dịch vụ công nghệ số hạn chế chuyển giao được quy định ra sao?",Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D15,-1,1,1,-1,1
+226,"Việc thúc đẩy nghiên cứu và phát triển sản phẩm, dịch vụ công nghệ số được quy định ra sao?",Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D16,1,1,1,1,1
+227,Phát triển cơ sở nghiên cứu và phát triển công nghệ số được quy định ra sao?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D17,1,1,1,1,1
+228,Phát triển nhân lực công nghiệp công nghệ số được quy định ra sao?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D18,1,1,1,1,1
+229,Việc thu hút nguồn nhân lực công nghiệp công nghệ số chất lượng cao được quy định ra sao?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D19,1,1,1,1,1
+230,Việc thiết lập trang thông tin điện tử được quy định như thế nào?,Lu_t_C_ng_ngh_th_ng_tin_2006_D23,1,1,1,1,1
+231,Nguyên tắc ứng dụng công nghệ thông tin trong hoạt động của cơ quan nhà nước gồm những gì?,Lu_t_C_ng_ngh_th_ng_tin_2006_D24,1,1,1,1,1
+232,Điều kiện để triển khai ứng dụng công nghệ thông tin trong hoạt động của cơ quan nhà nước là gì?,Lu_t_C_ng_ngh_th_ng_tin_2006_D25,1,1,1,1,1
+233,Nội dung ứng dụng công nghệ thông tin trong hoạt động của cơ quan nhà nước bao gồm những gì?,Lu_t_C_ng_ngh_th_ng_tin_2006_D26,1,1,1,1,1
+234,Hoạt động của cơ quan nhà nước trên môi trường mạng được quy định ra sao?,Lu_t_C_ng_ngh_th_ng_tin_2006_D27,1,-1,1,1,-1
+235,"Việc kết nối, chia sẻ, điều phối dữ liệu được quy định ra sao?",Lu_t_D_li_u_2024_D17,-1,1,1,-1,1
+236,Việc cung cấp dữ liệu cho cơ quan nhà nước được quy định như thế nào?,Lu_t_D_li_u_2024_D18,-1,1,1,-1,1
+237,"Việc phân tích, tổng hợp dữ liệu được quy định ra sao?",Lu_t_D_li_u_2024_D19,-1,1,1,-1,1
+238,"Việc xác nhận, xác thực dữ liệu được quy định như thế nào?",Lu_t_D_li_u_2024_D20,-1,1,1,-1,1
+239,Việc công khai dữ liệu được quy định ra sao?,Lu_t_D_li_u_2024_D21,-1,1,1,-1,1
+240,"Yêu cầu đối với lưu trữ, xử lý chứng thư điện tử được quy định ra sao?",Lu_t_Giao_d_ch_i_n_t_2023_D21,-1,1,1,-1,1
+241,Dịch vụ tin cậy bao gồm những loại dịch vụ nào?,Lu_t_Giao_d_ch_i_n_t_2023_D28,-1,4,4,-1,4
+242,Điều kiện kinh doanh dịch vụ tin cậy được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D29,-1,1,1,-1,1
+243,Trách nhiệm của tổ chức cung cấp dịch vụ tin cậy là gì?,Lu_t_Giao_d_ch_i_n_t_2023_D30,-1,1,1,-1,1
+244,Dịch vụ cấp dấu thời gian được quy định như thế nào?,Lu_t_Giao_d_ch_i_n_t_2023_D31,-1,4,4,-1,4
+245,Các đối tượng quyền liên quan được bảo hộ gồm những đối tượng nào?,Lu_t_S_h_u_tr_tu_2005_D17,1,2,1,1,2
+246,Các loại hình tác phẩm được bảo hộ quyền tác giả gồm những loại nào?,Lu_t_S_h_u_tr_tu_2005_D14,1,-1,1,1,-1
+247,Thời hạn bảo hộ quyền tác giả được quy định ra sao?,Lu_t_S_h_u_tr_tu_2005_D27,1,-1,1,1,-1
+248,Quyền tài sản của tác giả gồm những quyền nào?,Lu_t_S_h_u_tr_tu_2005_D20,1,-1,1,1,-1
+249,Quyền tự bảo vệ quyền sở hữu trí tuệ được quy định như thế nào?,Lu_t_S_h_u_tr_tu_2005_D198,1,3,1,1,3
+250,Đánh giá điều kiện an ninh mạng đối với hệ thống thông tin quan trọng về an ninh quốc gia được thực hiện ra sao?,Lu_t_An_ninh_m_ng_2018_D12,1,1,1,1,1
+251,"Phòng ngừa, xử lý thông tin có nội dung tuyên truyền chống Nhà nước trên không gian mạng được quy định ra sao?",Lu_t_An_ninh_m_ng_2018_D16,-1,2,2,-1,2
+252,Việc kiểm tra an ninh mạng đối với hệ thống thông tin quan trọng về an ninh quốc gia được thực hiện như thế nào?,Lu_t_An_ninh_m_ng_2018_D13,1,1,1,1,1
+253,Biện pháp bảo vệ an ninh mạng được quy định gồm những biện pháp nào?,Lu_t_An_ninh_m_ng_2018_D5,3,1,2,3,1
+254,Bảo vệ không gian mạng quốc gia được quy định như thế nào?,Lu_t_An_ninh_m_ng_2018_D6,1,1,1,1,1
+255,Các thông tin và hành vi sử dụng công nghệ thông tin xâm phạm an ninh quốc gia trên không gian mạng được quy định gồm nh,Lu_t_An_ninh_m_ng_2025_D13,1,1,1,1,1
+256,"Sản phẩm, dịch vụ an ninh mạng được quy định gồm những loại nào?",Lu_t_An_ninh_m_ng_2025_D28,1,1,1,1,1
+257,Việc ngăn chặn xung đột thông tin trên không gian mạng được quy định ra sao?,Lu_t_An_ninh_m_ng_2025_D22,1,1,1,1,1
+258,"Phòng, chống khủng bố mạng được quy định như thế nào?",Lu_t_An_ninh_m_ng_2025_D19,2,1,2,2,1
+259,"Tiêu chuẩn, quy chuẩn kỹ thuật an ninh mạng được quy định ra sao?",Lu_t_An_ninh_m_ng_2025_D27,1,1,1,1,1
+260,Nhiệm vụ bảo vệ hệ thống thông tin được quy định gồm những nội dung gì?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D22,-1,1,1,-1,1
+261,Biện pháp bảo vệ hệ thống thông tin được quy định gồm những biện pháp nào?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D23,-1,1,1,-1,1
+262,Việc giám sát an toàn hệ thống thông tin được quy định ra sao?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D24,1,1,1,1,1
+263,Trách nhiệm của chủ quản hệ thống thông tin được quy định ra sao?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D25,1,2,1,1,2
+264,Hệ thống thông tin quan trọng quốc gia được quy định gồm những loại nào?,Lu_t_An_to_n_th_ng_tin_m_ng_2015_D26,-1,1,1,-1,1
+265,Việc thông báo vi phạm quy định về bảo vệ dữ liệu cá nhân được thực hiện ra sao?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D23,-1,1,2,-1,1
+266,Bảo vệ dữ liệu cá nhân của trẻ em và người có khó khăn nhận thức được quy định như thế nào?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D24,-1,2,2,-1,2
+267,"Bảo vệ dữ liệu cá nhân trong hoạt động tài chính, ngân hàng và thông tin tín dụng được quy định ra sao?",Lu_t_B_o_v_d_li_u_c_nh_n_2025_D27,1,1,1,1,1
+268,"Bảo vệ dữ liệu cá nhân trong hoạt động tài chính, ngân hàng và thông tin tín dụng gồm những nội dung gì?",Lu_t_B_o_v_d_li_u_c_nh_n_2025_D27,-1,1,1,-1,1
+269,Các hoạt động khác trong xử lý dữ liệu cá nhân bao gồm những gì?,Lu_t_B_o_v_d_li_u_c_nh_n_2025_D18,1,1,1,1,1
+270,Việc sử dụng thông tin của người tiêu dùng được quy định ra sao?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D18,1,1,1,1,1
+271,"Việc kiểm tra, chỉnh sửa, cập nhật, hủy bỏ, chuyển giao thông tin của người tiêu dùng được quy định ra sao?",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D20,1,1,1,1,1
+272,"Việc cung cấp thông tin về sản phẩm, hàng hóa, dịch vụ và hợp đồng theo mẫu cho người tiêu dùng được quy định ra sao?",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D21,-1,1,1,-1,1
+273,Việc giải thích hợp đồng giao kết với người tiêu dùng và hợp đồng theo mẫu được quy định ra sao?,Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D24,1,1,1,1,1
+274,"Việc miễn trách nhiệm bồi thường thiệt hại do sản phẩm, hàng hóa có khuyết tật gây ra được quy định ra sao?",Lu_t_B_o_v_quy_n_l_i_ng_i_ti_u_d_ng_2023_D35,1,1,1,1,1
+275,"Việc thu hút, trọng dụng nhân tài công nghệ số được quy định ra sao?",Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D20,-1,1,1,-1,1
+276,"Việc đầu tư, thu hút nguồn lực phát triển hạ tầng công nghiệp công nghệ số được quy định ra sao?",Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D21,1,1,1,1,1
+277,"Việc thành lập, mở rộng khu công nghệ số tập trung được quy định ra sao?",Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D22,1,1,1,1,1
+278,Việc công nhận khu chức năng là khu công nghệ số tập trung được quy định ra sao?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D23,1,1,1,1,1
+279,Ưu đãi đối với khu công nghệ số tập trung được quy định ra sao?,Lu_t_C_ng_nghi_p_c_ng_ngh_s_2025_D24,1,1,1,1,1
+280,Trang thông tin điện tử của cơ quan nhà nước được quy định như thế nào?,Lu_t_C_ng_ngh_th_ng_tin_2006_D28,1,2,1,1,2
+281,Nguyên tắc ứng dụng công nghệ thông tin trong thương mại được quy định ra sao?,Lu_t_C_ng_ngh_th_ng_tin_2006_D29,1,1,1,1,1
+282,Trang thông tin điện tử bán hàng được quy định ra sao?,Lu_t_C_ng_ngh_th_ng_tin_2006_D30,1,1,1,1,1
+283,Việc cung cấp thông tin cho việc giao kết hợp đồng trên môi trường mạng được quy định ra sao?,Lu_t_C_ng_ngh_th_ng_tin_2006_D31,1,1,1,1,1
+284,Việc giải quyết hậu quả do lỗi nhập sai thông tin thương mại trên môi trường mạng được quy định ra sao?,Lu_t_C_ng_ngh_th_ng_tin_2006_D32,1,1,1,1,1
+285,"Việc mã hóa, giải mã dữ liệu được quy định ra sao?",Lu_t_D_li_u_2024_D22,-1,1,1,-1,1
+286,"Việc chuyển, xử lý dữ liệu xuyên biên giới được quy định như thế nào?",Lu_t_D_li_u_2024_D23,1,1,1,1,1
+287,"Hoạt động khoa học, công nghệ và đổi mới sáng tạo trong xây dựng, phát triển, bảo vệ, quản trị, xử lý, sử dụng dữ liệu đ",Lu_t_D_li_u_2024_D24,1,1,1,1,1
+288,Việc xác định và quản lý rủi ro phát sinh trong xử lý dữ liệu được quy định ra sao?,Lu_t_D_li_u_2024_D25,1,1,1,1,1
+289,Các hoạt động khác trong xử lý dữ liệu bao gồm những gì?,Lu_t_D_li_u_2024_D26,-1,1,1,-1,1
+290,Dịch vụ chứng thực thông điệp dữ liệu được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D32,-1,1,1,-1,1
+291,Dịch vụ chứng thực chữ ký số công cộng được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D33,-1,1,1,-1,1
+292,Hợp đồng điện tử được quy định như thế nào?,Lu_t_Giao_d_ch_i_n_t_2023_D34,1,-1,1,1,-1
+293,Việc giao kết hợp đồng điện tử được quy định ra sao?,Lu_t_Giao_d_ch_i_n_t_2023_D35,-1,1,1,-1,1
+294,Nguyên tắc giao kết và thực hiện hợp đồng điện tử gồm những nguyên tắc gì?,Lu_t_Giao_d_ch_i_n_t_2023_D36,1,1,1,1,1
+295,Đối tượng quyền sở hữu trí tuệ bao gồm những đối tượng nào?,Lu_t_S_h_u_tr_tu_2005_D3,-1,1,1,-1,1
+296,Điều kiện chung đối với sáng chế được bảo hộ là gì?,Lu_t_S_h_u_tr_tu_2005_D58,1,-1,1,1,-1
+297,Điều kiện chung đối với kiểu dáng công nghiệp được bảo hộ là gì?,Lu_t_S_h_u_tr_tu_2005_D63,1,-1,1,1,-1
+298,Điều kiện chung đối với nhãn hiệu được bảo hộ là gì?,Lu_t_S_h_u_tr_tu_2005_D72,1,-1,1,1,-1
+299,Điều kiện chung đối với chỉ dẫn địa lý được bảo hộ là gì?,Lu_t_S_h_u_tr_tu_2005_D79,1,-1,1,1,-1
+300,Bảo vệ trẻ em trên không gian mạng được quy định gồm những nội dung gì?,Lu_t_An_ninh_m_ng_2018_D29,1,1,1,1,1

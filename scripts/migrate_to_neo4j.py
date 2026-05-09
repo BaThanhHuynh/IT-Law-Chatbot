@@ -12,7 +12,7 @@ sys.path.append(project_dir)
 from app.core.config import Config
 from app.core.logger import logger
 
-KG_DATA_PATH = os.path.join(project_dir, "datab", "kg_data.json")
+KG_DATA_PATH = os.path.join(project_dir, "law_crawler", "data", "kg_data.json")
 MODEL_NAME = r"C:\law_v2_model_20260505_1418" # Cập nhật mô hình mới
 
 def migrate_to_neo4j():
@@ -121,7 +121,7 @@ def migrate_to_neo4j():
             CREATE VECTOR INDEX entity_embedding_idx IF NOT EXISTS
             FOR (n:Entity) ON (n.embedding)
             OPTIONS {indexConfig: {
-              `vector.dimensions`: 384,
+              `vector.dimensions`: 768,
               `vector.similarity_function`: 'cosine'
             }}
             """)

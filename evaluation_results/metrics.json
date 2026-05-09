@@ -1,0 +1,34 @@
+{
+  "config": {
+    "n_samples": 300,
+    "top_k": 5,
+    "csv": "D:\\Download\\Test_data_lawCNTT_cleaned (1).csv",
+    "elapsed_seconds": 154.56
+  },
+  "metrics": {
+    "RAG only": {
+      "n_samples": 300,
+      "n_hits": 196,
+      "hit@1": 0.6033,
+      "hit@5": 0.6533,
+      "recall": 0.6533,
+      "mrr": 0.6244
+    },
+    "KG only": {
+      "n_samples": 300,
+      "n_hits": 265,
+      "hit@1": 0.7033,
+      "hit@5": 0.8833,
+      "recall": 0.8833,
+      "mrr": 0.7803
+    },
+    "Hybrid (RAG+KG)": {
+      "n_samples": 300,
+      "n_hits": 282,
+      "hit@1": 0.7733,
+      "hit@5": 0.94,
+      "recall": 0.94,
+      "mrr": 0.8419
+    }
+  }
+}

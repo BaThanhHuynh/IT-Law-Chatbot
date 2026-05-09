@@ -1,6 +1,7 @@
 import json
 import uuid
 import os
+import concurrent.futures
 from datetime import datetime
 import google.generativeai as genai
 
@@ -129,8 +130,16 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
     # 2. Save user message (original query)
     save_message(conversation_id, "user", query)
 
-    # 3. Classify intent (using rewritten query)
-    intent = classify_intent(rewritten_query)
+    # 3. Chạy song song 3 tác vụ LLM (Intent, Entities, Sub-queries) để giảm độ trễ
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        future_intent = executor.submit(classify_intent, rewritten_query)
+        future_entities = executor.submit(extract_entities, rewritten_query)
+        future_sub_queries = executor.submit(generate_sub_queries, rewritten_query)
+
+        intent = future_intent.result()
+        extracted_entities = future_entities.result()
+        sub_queries = future_sub_queries.result()
+
     logger.info(f"[{conversation_id}] Query classified as: {intent}")
 
     if intent == "CHATCHIT":
@@ -143,12 +152,12 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
     else:
         # LUAT MODE: Full hybrid search pipeline
         try:
-            # Step 1: Extract entities for KG keyword matching
-            extracted_entities = extract_entities(rewritten_query)
+            # Step 1: Đã chạy song song ở trên
             logger.info(f"[{conversation_id}] Extracted entities: {extracted_entities}")
 
-            # Step 2: Generate multi-query variants via LLM
-            sub_queries = generate_sub_queries(rewritten_query)
+            # Step 2: Đã chạy song song ở trên
+            
+
 
             # Step 3: Hybrid search
             search_results = hybrid_search(
