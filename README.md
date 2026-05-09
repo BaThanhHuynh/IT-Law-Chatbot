@@ -13,11 +13,16 @@ Hệ thống được đóng gói hoàn toàn bằng **Docker** để đảm b�
 - **Mô hình nhúng Tiếng Việt**: Sử dụng mô hình **huyydangg/DEk21_hcmute_embedding** đã được fine-tune Môh trên bộ dữ liệu nội bộ bao gồm khoảng 100.000 ví dụ về các câu hỏi pháp lý và bối cảnh liên quan của chúng.
 
 ## 3. Ảnh Demo
-![alt text](image.png)
-![alt text](image-1.png)
-![alt text](image-2.png)
-![alt text](image-3.png)
-![alt text](image-4.png)
+<img width="1366" height="632" alt="image" src="https://github.com/user-attachments/assets/cf8acb31-bc39-4fb6-b444-1d51aae7d288" />
+
+<img width="1349" height="379" alt="image" src="https://github.com/user-attachments/assets/46894b21-a994-427b-a6c1-a87d44d226f4" />
+
+<img width="1363" height="612" alt="image" src="https://github.com/user-attachments/assets/d8cb444f-c081-44c0-aef0-3ba0a87a25e9" />
+
+<img width="1366" height="621" alt="image" src="https://github.com/user-attachments/assets/f8dd9aad-976c-4765-8256-75d34993c345" />
+
+<img width="1360" height="617" alt="image" src="https://github.com/user-attachments/assets/82d731b3-3248-4da7-818e-b20187980f77" />
+
 ## 4. Hướng dẫn cài đặt (Dockerized)
 
 **Yêu cầu hệ thống:**
