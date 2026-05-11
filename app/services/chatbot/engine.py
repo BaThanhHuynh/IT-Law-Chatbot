@@ -3,7 +3,8 @@ import uuid
 import os
 import concurrent.futures
 from datetime import datetime
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from app.core.config import Config
 from app.core.logger import logger
@@ -15,12 +16,11 @@ from app.services.chatbot.prompts import SYSTEM_PROMPT, RAG_PROMPT_TEMPLATE, TIT
 _model = None
 
 def get_llm():
-    """Get or initialize Gemini model."""
+    """Get or initialize Gemini client."""
     global _model
     if _model is None:
-        genai.configure(api_key=Config.GEMINI_API_KEY)
-        _model = genai.GenerativeModel("gemini-3.1-flash-lite-preview")
-        logger.info("[LLM] Gemini model initialized.")
+        _model = genai.Client(api_key=Config.GEMINI_API_KEY)
+        logger.info("[LLM] Gemini client initialized.")
     return _model
 
 
@@ -30,7 +30,10 @@ def classify_intent(query: str) -> str:
     try:
         model = get_llm()
         prompt = INTENT_CLASSIFICATION_PROMPT.format(query=query)
-        response = model.generate_content(prompt)
+        response = model.models.generate_content(
+            model="gemini-3.1-flash-lite-preview",
+            contents=prompt
+        )
         intent = response.text.strip().upper()
         if "LUAT" in intent:
             return "LUAT"
@@ -45,7 +48,10 @@ def rewrite_query(query: str, history_context: str) -> str:
     try:
         model = get_llm()
         prompt = QUERY_REWRITE_PROMPT.format(history_context=history_context, query=query)
-        response = model.generate_content(prompt)
+        response = model.models.generate_content(
+            model="gemini-3.1-flash-lite-preview",
+            contents=prompt
+        )
         rewritten = response.text.strip()
         # Fallback if model refuses or returns empty
         if not rewritten or len(rewritten) < 2:
@@ -61,8 +67,15 @@ def extract_entities(query: str) -> str:
     try:
         model = get_llm()
         prompt = ENTITY_EXTRACTION_PROMPT.format(query=query)
-        response = model.generate_content(prompt)
-        return response.text.strip()
+        response = model.models.generate_content(
+            model="gemini-3.1-flash-lite-preview",
+            contents=prompt
+        )
+        try:
+            text = response.text.strip()
+            return text if text else query
+        except ValueError:
+            return query
     except Exception as e:
         logger.error(f"[Error] Entity extraction failed: {e}")
         return query  # Fallback to original query
@@ -80,10 +93,18 @@ def generate_sub_queries(query: str) -> list:
     try:
         model = get_llm()
         prompt = MULTI_QUERY_PROMPT.format(query=query)
-        response = model.generate_content(prompt)
+        response = model.models.generate_content(
+            model="gemini-3.1-flash-lite-preview",
+            contents=prompt
+        )
         
+        try:
+            text = response.text.strip()
+        except ValueError:
+            text = ""
+            
         # Parse response: expect 3 lines
-        variants = [line.strip() for line in response.text.strip().split("\n") if line.strip()]
+        variants = [line.strip() for line in text.split("\n") if line.strip()]
         
         # Always include original query first, then add all 3 variants
         all_queries = [query] + variants[:3]
@@ -190,10 +211,12 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
     history = get_conversation_history(conversation_id, limit=6)
     chat_history = []
     for msg in history[:-1]:  # Exclude the current user message
-        chat_history.append({
-            "role": "user" if msg["role"] == "user" else "model",
-            "parts": [msg["content"]],
-        })
+        chat_history.append(
+            types.Content(
+                role="user" if msg["role"] == "user" else "model",
+                parts=[types.Part.from_text(text=msg["content"])]
+            )
+        )
 
     # 5. Generate Response using Gemini API
     try:
@@ -203,10 +226,14 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             answer = "Dữ liệu tìm thấy từ CSDL (Mock Mode):\n\n" + rag_context
         else:
             model = get_llm()
-            chat = model.start_chat(history=chat_history)
-            response = chat.send_message(
-                f"{system_prompt}\n\n{prompt}",
+            chat = model.chats.create(
+                model="gemini-3.1-flash-lite-preview",
+                history=chat_history,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                )
             )
+            response = chat.send_message(prompt)
             answer = response.text
     except Exception as e:
         logger.error(f"[Error] LLM generation failed: {e}")
@@ -310,7 +337,10 @@ def create_conversation(first_query: str = "") -> str:
         try:
             model = get_llm()
             title_prompt = TITLE_PROMPT.format(query=first_query)
-            response = model.generate_content(title_prompt)
+            response = model.models.generate_content(
+                model="gemini-3.1-flash-lite-preview",
+                contents=title_prompt
+            )
             title = response.text.strip()[:100]
         except Exception:
             title = first_query[:50] + "..." if len(first_query) > 50 else first_query

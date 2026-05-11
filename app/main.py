@@ -3,6 +3,7 @@ FastAPI app entry point for IT Law Chatbot.
 """
 import warnings
 import uvicorn
+from contextlib import asynccontextmanager
 from typing import Optional
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,11 +40,45 @@ class ChatAnswer(BaseModel):
     graph_data: dict = {"nodes": [], "edges": []}
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Warmup models and connections
+    logger.info("Đang Warmup hệ thống...")
+    try:
+        from app.services.rag.embeddings import get_model
+        from app.services.chatbot.engine import get_llm
+        from app.services.graphrag.knowledge_graph import get_knowledge_graph
+        from app.services.rag.retriever import get_qdrant_client
+        
+        # 1. Tải Embedding Model (Nặng nhất)
+        logger.info("Đang nạp Dek21 Embedding Model vào RAM...")
+        get_model()
+        
+        # 2. Tải Gemini
+        logger.info("Khởi tạo cấu hình Gemini LLM...")
+        get_llm()
+        
+        # 3. Kết nối CSDL
+        logger.info("Khởi tạo kết nối Qdrant & Neo4j...")
+        get_qdrant_client()
+        get_knowledge_graph()
+        
+        logger.info("Warmup hoàn tất! Hệ thống sẵn sàng nhận yêu cầu siêu tốc.")
+    except Exception as e:
+        logger.error(f"Warmup thất bại: {e}")
+        
+    yield
+    
+    # Shutdown logic
+    logger.info("Dừng hệ thống...")
+
+
 def create_app():
     app = FastAPI(
         title="IT Law Chatbot API",
         description="API for consulting IT laws in Vietnam",
-        version="1.0.0"
+        version="1.0.0",
+        lifespan=lifespan
     )
 
     # Rate limiter state

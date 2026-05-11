@@ -168,9 +168,8 @@ async function sendMessage() {
             const data = result.data;
             currentConversationId = data.conversation_id;
 
-            // Append assistant message
-            appendMessage('assistant', data.answer, data.sources);
-
+            // Append assistant message with animation (animate = true)
+            appendMessage('assistant', data.answer, data.sources, true);
 
 
             // Refresh conversation list
@@ -195,7 +194,7 @@ function sendSuggestion(text) {
     sendMessage();
 }
 
-function appendMessage(role, content, sources = null) {
+function appendMessage(role, content, sources = null, animate = false) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${role}`;
 
@@ -227,14 +226,60 @@ function appendMessage(role, content, sources = null) {
     msgDiv.innerHTML = `
         <div class="message-body">
             <div class="message-content">
-                ${formattedContent}
-                ${copyBtnHtml}
+                ${animate ? '' : formattedContent + copyBtnHtml}
             </div>
-            ${sourcesHtml}
+            ${animate ? '' : sourcesHtml}
         </div>
     `;
 
     messagesContainer.appendChild(msgDiv);
+
+    if (animate) {
+        const contentEl = msgDiv.querySelector('.message-content');
+        const bodyEl = msgDiv.querySelector('.message-body');
+
+        typeWriterHTML(contentEl, formattedContent, 15).then(() => {
+            contentEl.innerHTML = formattedContent + copyBtnHtml;
+            if (sourcesHtml) {
+                // Reveal sources after typing is done
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = sourcesHtml;
+                bodyEl.appendChild(tempDiv.firstElementChild);
+            }
+            scrollToBottom();
+        });
+    }
+}
+
+async function typeWriterHTML(el, htmlString, speed = 10) {
+    el.innerHTML = '';
+    let cursor = 0;
+    while (cursor < htmlString.length) {
+        if (htmlString[cursor] === '<') {
+            let endTag = htmlString.indexOf('>', cursor);
+            if (endTag !== -1) {
+                cursor = endTag + 1;
+            } else {
+                cursor++;
+            }
+        } else if (htmlString[cursor] === '&') {
+            let endEntity = htmlString.indexOf(';', cursor);
+            if (endEntity !== -1 && endEntity - cursor < 10) {
+                cursor = endEntity + 1;
+            } else {
+                cursor++;
+            }
+        } else {
+            cursor += 20; // Tăng lên 20 ký tự mỗi lần
+            if (cursor > htmlString.length) cursor = htmlString.length;
+        }
+
+        // Thêm con trỏ nhấp nháy giả
+        el.innerHTML = htmlString.substring(0, cursor) + '<span style="border-right: 2px solid var(--text-color); margin-left: 2px; animation: blink 1s step-end infinite;"></span>';
+        scrollToBottom();
+        await new Promise(r => setTimeout(r, speed));
+    }
+    el.innerHTML = htmlString;
 }
 
 function showTypingIndicator() {
@@ -259,6 +304,29 @@ function showTypingIndicator() {
 function formatMessageContent(content) {
     if (!content) return '';
 
+    let thinkingHtml = '';
+    const thinkingMatch = content.match(/<thinking>([\s\S]*?)<\/thinking>/);
+    if (thinkingMatch) {
+        let thinkingContent = escapeHtml(thinkingMatch[1].trim());
+        // Simple markdown for thinking block
+        thinkingContent = thinkingContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        thinkingContent = thinkingContent.replace(/\n/g, '<br>');
+
+        thinkingHtml = `
+            <details class="thinking-block">
+                <summary>Quá trình AI suy luận (Nhấp để mở)</summary>
+                <div class="thinking-content">${thinkingContent}</div>
+            </details>
+        `;
+        content = content.replace(/<thinking>[\s\S]*?<\/thinking>/, '');
+    }
+
+    // Extract <answer> block if any
+    const answerMatch = content.match(/<answer>([\s\S]*?)<\/answer>/);
+    if (answerMatch) {
+        content = answerMatch[1].trim();
+    }
+
     // Basic markdown-like formatting
     let html = escapeHtml(content);
 
@@ -278,7 +346,7 @@ function formatMessageContent(content) {
     // Line breaks
     html = html.replace(/\n/g, '<br>');
 
-    return html;
+    return thinkingHtml + html;
 }
 
 

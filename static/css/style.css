@@ -523,6 +523,35 @@ body {
     font-size: 0.85em;
 }
 
+/* ---- Thinking Block ---- */
+.thinking-block {
+    margin-bottom: 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.thinking-block summary {
+    cursor: pointer;
+    font-weight: 500;
+    user-select: none;
+    outline: none;
+}
+
+.thinking-block summary:hover {
+    color: var(--text-primary);
+}
+
+.thinking-content {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-color);
+    line-height: 1.6;
+}
+
 /* ---- Sources ---- */
 .message-sources {
     margin-top: 10px;
@@ -703,4 +732,10 @@ body {
     .input-area {
         padding: 8px 12px 12px;
     }
+}
+
+/* ---- Cursor Blink Animation ---- */
+@keyframes blink {
+    0%, 100% { border-color: var(--text-color); }
+    50% { border-color: transparent; }
 }

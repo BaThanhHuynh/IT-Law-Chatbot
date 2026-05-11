@@ -61,12 +61,14 @@ Chỉ trả về tiêu đề, không giải thích gì thêm.
 Câu hỏi: {query}
 """
 
-INTENT_CLASSIFICATION_PROMPT = """Bạn là một hệ thống phân loại ý định người dùng.
-Phân loại câu hỏi sau thành một trong 2 nhãn:
-- CHATCHIT: Các câu chào hỏi thông thường (chào bạn, bạn là ai, cảm ơn, xin chào), câu khen ngợi, hoặc tán gẫu vu vơ.
-- LUAT: Các câu hỏi, tình huống, từ khóa liên quan đến kiến thức pháp luật, công nghệ thông tin, quy định, xử phạt, v.v.
+INTENT_CLASSIFICATION_PROMPT = """Bạn là một hệ thống phân loại ý định người dùng xuất sắc.
+Nhiệm vụ của bạn là đọc câu hỏi và CHỈ trả về đúng 1 từ: "CHATCHIT" hoặc "LUAT". Không giải thích thêm.
 
-Chỉ trả về 1 từ duy nhất là "CHATCHIT" hoặc "LUAT", không giải thích thêm.
+Quy tắc phân loại:
+- CHATCHIT: Bất kỳ câu hỏi nào mang tính chất giao tiếp xã giao (VD: "xin chào", "bạn là ai", "bạn làm được gì", "cảm ơn", "tạm biệt"), câu hỏi vu vơ không liên quan đến pháp luật, hoặc yêu cầu giới thiệu bản thân.
+- LUAT: Chỉ áp dụng khi câu hỏi CHẮC CHẮN chứa các yếu tố pháp lý, luật pháp, xử phạt, quy định công nghệ thông tin, an ninh mạng, thương mại điện tử, v.v.
+
+Lưu ý quan trọng: Nếu câu hỏi là "xin chào bạn là ai?" -> PHẢI trả về CHATCHIT.
 
 Câu hỏi: {query}
 """
