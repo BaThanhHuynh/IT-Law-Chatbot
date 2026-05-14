@@ -18,6 +18,17 @@ const btnToggleSidebar = document.getElementById('btnToggleSidebar');
 
 const sidebar = document.getElementById('sidebar');
 
+// ---- Theme Toggle ----
+const btnThemeToggle = document.getElementById('btnThemeToggle');
+const savedTheme = localStorage.getItem('theme') || 'dark';
+document.documentElement.setAttribute('data-theme', savedTheme);
+
+btnThemeToggle.addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    localStorage.setItem('theme', next);
+});
 const conversationList = document.getElementById('conversationList');
 const chatTitle = document.getElementById('chatTitle');
 
@@ -72,7 +83,11 @@ async function loadConversations() {
 }
 
 function renderConversationList(conversations) {
-    if (!conversations || conversations.length === 0) {
+    // Lọc bỏ các cuộc hội thoại đã bị ẩn (Soft delete)
+    const hiddenConvs = JSON.parse(localStorage.getItem('hiddenConversations') || '[]');
+    const visibleConversations = conversations.filter(conv => !hiddenConvs.includes(conv.id));
+
+    if (visibleConversations.length === 0) {
         conversationList.innerHTML = `
             <div class="conversation-empty">
                 <p>Chưa có cuộc hội thoại nào</p>
@@ -80,13 +95,31 @@ function renderConversationList(conversations) {
         return;
     }
 
-    conversationList.innerHTML = conversations.map(conv => `
+    conversationList.innerHTML = visibleConversations.map(conv => `
         <div class="conversation-item ${conv.id === currentConversationId ? 'active' : ''}"
              onclick="loadConversation('${conv.id}')" data-id="${conv.id}">
             <div class="conv-title">${escapeHtml(conv.title)}</div>
-            <div class="conv-time">${formatTime(conv.updated_at)}</div>
+            <div class="conv-meta">
+                <span class="conv-time">${formatTime(conv.updated_at)}</span>
+                <button class="btn-delete-conv" onclick="event.stopPropagation(); hideConversation('${conv.id}')" title="Xoá (chỉ ẩn khỏi màn hình)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                </button>
+            </div>
         </div>
     `).join('');
+}
+
+function hideConversation(conversationId) {
+    if (!confirm('Bạn có chắc muốn xoá cuộc hội thoại này? (Sẽ chỉ ẩn khỏi màn hình, dữ liệu vẫn an toàn)')) return;
+    
+    const hiddenConvs = JSON.parse(localStorage.getItem('hiddenConversations') || '[]');
+    hiddenConvs.push(conversationId);
+    localStorage.setItem('hiddenConversations', JSON.stringify(hiddenConvs));
+    
+    if (currentConversationId === conversationId) {
+        newConversation();
+    }
+    loadConversations();
 }
 
 async function loadConversation(conversationId) {
@@ -210,7 +243,6 @@ function appendMessage(role, content, sources = null, animate = false) {
                     ${parsedSources.map(s => `
                         <div class="source-item">
                             <span>${escapeHtml(s.doc_title || '')} ${s.so_hieu ? '(' + escapeHtml(s.so_hieu) + ')' : ''} ${s.article ? '- ' + escapeHtml(s.article) : ''}</span>
-                            <span class="source-score">${(s.score * 100).toFixed(0)}%</span>
                         </div>
                     `).join('')}
                 </div>`;

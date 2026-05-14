@@ -219,6 +219,163 @@ def get_knowledge_graph() -> KnowledgeGraph:
         _kg_instance = KnowledgeGraph()
     return _kg_instance
 
+def _build_entity_id(so_hieu: str, dieu_so: str) -> str:
+    """Build Neo4j entity_id from so_hieu and dieu_so.
+    
+    VD: so_hieu='24/2018/QH14', dieu_so='7' → 'dieu_24_2018_QH14_7'
+    """
+    if not so_hieu or not dieu_so:
+        return ""
+    sanitized = re.sub(r'[/\-\s]', '_', so_hieu.strip())
+    return f"dieu_{sanitized}_{dieu_so}"
+
+
+def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", top_extra: int = 3) -> list:
+    """
+    Graph Re-ranking: sau khi RAG tìm được chunks, duyệt đồ thị để tìm các điều luật
+    liên quan (tham chiếu, liên kết) và bổ sung vào kết quả.
+    
+    Chiến lược 2 lớp:
+    Lớp 1 (Direct): Duyệt trực tiếp 1-2 hop từ entity_id của các điều đã tìm được
+    Lớp 2 (Concept Bridge): Tìm các điều từ LUẬT KHÁC cùng AP_DUNG cho 1 khái niệm
+           VD: Điều 7 ATTTM --AP_DUNG--> "phần mềm độc hại" <--AP_DUNG-- Điều 83 NĐ15
+    """
+    from app.services.rag.retriever import get_qdrant_client
+    from qdrant_client.models import Filter, FieldCondition, MatchAny
+
+    # ── Bước 1: Xây dựng entity_id ĐÚNG FORMAT từ RAG results ────────
+    article_entity_ids = []
+    source_so_hieus = set()  # Track which laws we already have
+    for vr in vector_results[:5]:
+        dieu_so = vr.get("dieu_so", "")
+        so_hieu = vr.get("so_hieu", "")
+        if dieu_so and so_hieu:
+            eid = _build_entity_id(so_hieu, dieu_so)
+            if eid and eid not in article_entity_ids:
+                article_entity_ids.append(eid)
+                source_so_hieus.add(so_hieu)
+
+    if not article_entity_ids:
+        logger.info(f"[GraphExpand] No valid entity_ids from RAG results, skipping")
+        return vector_results
+
+    logger.info(f"[GraphExpand] Built entity_ids from RAG: {article_entity_ids[:5]}")
+
+    # ── Bước 2: Lớp 1 — Duyệt trực tiếp (THUOC, LIEN_QUAN...) ──────
+    related_entity_ids = []
+    try:
+        cypher_direct = """
+        MATCH (start:Entity)-[r*1..2]-(related:Entity)
+        WHERE start.entity_id IN $entity_ids
+          AND NOT related.entity_id IN $entity_ids
+          AND related.entity_id STARTS WITH 'dieu_'
+        RETURN DISTINCT related.entity_id AS entity_id, related.name AS name
+        LIMIT 10
+        """
+        results = kg.graph.query(cypher_direct, params={"entity_ids": article_entity_ids})
+        related_entity_ids = [r["entity_id"] for r in results if r.get("entity_id")]
+        logger.info(f"[GraphExpand] Layer 1 (Direct): Found {len(related_entity_ids)} related articles")
+    except Exception as e:
+        logger.warning(f"[GraphExpand] Layer 1 failed: {e}")
+
+    # ── Bước 3: Lớp 2 — Concept Bridge (AP_DUNG xuyên luật) ─────────
+    # Tìm các điều từ VĂN BẢN KHÁC cùng áp dụng cho 1 khái niệm
+    try:
+        cypher_bridge = """
+        MATCH (start:Entity)-[:AP_DUNG]->(concept)<-[:AP_DUNG]-(related:Entity)
+        WHERE start.entity_id IN $entity_ids
+          AND NOT related.entity_id IN $entity_ids
+          AND NOT related.entity_id IN $already_found
+          AND related.entity_id STARTS WITH 'dieu_'
+        RETURN DISTINCT related.entity_id AS entity_id, related.name AS name,
+               concept.name AS via_concept
+        LIMIT 10
+        """
+        bridge_results = kg.graph.query(cypher_bridge, params={
+            "entity_ids": article_entity_ids,
+            "already_found": related_entity_ids
+        })
+        
+        for r in bridge_results:
+            if r.get("entity_id") and r["entity_id"] not in related_entity_ids:
+                related_entity_ids.append(r["entity_id"])
+                logger.info(f"[GraphExpand] Layer 2 (Bridge): {r['entity_id']} via concept '{r.get('via_concept', '?')}'")
+        
+        logger.info(f"[GraphExpand] Layer 2 (Bridge): Found {len(bridge_results)} cross-law articles")
+    except Exception as e:
+        logger.warning(f"[GraphExpand] Layer 2 failed: {e}")
+
+    if not related_entity_ids:
+        logger.info(f"[GraphExpand] No related articles found in graph")
+        return vector_results
+
+    # ── Bước 4: Trích dieu_so từ entity_id ────────────────────────────
+    # dieu_24_2018_QH14_7 → "7",  dieu_15_2020_ND_CP_83 → "83"
+    related_dieu_so = []
+    for eid in related_entity_ids:
+        # Lấy số cuối cùng trong entity_id (đó là dieu_so)
+        parts = eid.split('_')
+        if len(parts) >= 2:
+            dieu_so = parts[-1]
+            if dieu_so.isdigit() and dieu_so not in related_dieu_so:
+                related_dieu_so.append(dieu_so)
+
+    if not related_dieu_so:
+        return vector_results
+
+    # ── Bước 5: Truy vấn Qdrant lấy nội dung các điều liên quan ──────
+    try:
+        qdrant = get_qdrant_client()
+        existing_keys = {(r.get("doc_title", ""), r.get("dieu_so", "")) for r in vector_results}
+
+        qdrant_results, _ = qdrant.scroll(
+            collection_name=Config.QDRANT_COLLECTION,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(
+                        key="dieu_so",
+                        match=MatchAny(any=related_dieu_so)
+                    )
+                ]
+            ),
+            limit=top_extra * 3,
+            with_payload=True,
+        )
+
+        added = 0
+        for point in qdrant_results:
+            p = point.payload
+            key = (p.get("ten_van_ban", ""), p.get("dieu_so", ""))
+            if key in existing_keys:
+                continue
+            existing_keys.add(key)
+
+            article_str = f"Điều {p.get('dieu_so', '')}"
+            if p.get("dieu_ten"):
+                article_str += f". {p['dieu_ten']}"
+
+            vector_results.append({
+                "chunk_id": p.get("chunk_id"),
+                "content": p.get("full_dieu_text") or p.get("noi_dung_chunk") or p.get("content", ""),
+                "context_text": p.get("context_text", ""),
+                "dieu_so": p.get("dieu_so", ""),
+                "dieu_ten": p.get("dieu_ten", ""),
+                "article": article_str,
+                "doc_title": p.get("ten_van_ban", ""),
+                "so_hieu": p.get("so_hieu", ""),
+                "score": 0.0,
+                "_source": "graph_expand",
+            })
+            added += 1
+            if added >= top_extra:
+                break
+
+        logger.info(f"[GraphExpand] Injected {added} extra articles from graph into RAG context")
+    except Exception as e:
+        logger.warning(f"[GraphExpand] Qdrant fetch for related articles failed: {e}")
+
+    return vector_results
+
 
 def hybrid_search(query: str, sub_queries: list = None, entities: str = None, top_k: int = 5) -> dict:
     """
@@ -229,6 +386,7 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
     
     Strategy:
     - Vector search: Multi-query (original + LLM variants + expanded abbreviations)
+    - Graph expand: Traverse graph to find related articles missed by vector search
     - Graph search:  Expanded entities (keyword match with abbreviation expansion)
     - Graph traversal: Expand context from matched entities + vector result entities
     
@@ -248,8 +406,6 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
         all_queries.append(expanded)
     
     # Layer 3: Domain static queries (rule-based, always consistent)
-    # These guarantee specific laws are always retrieved for known topics
-    # regardless of LLM variant quality (fixes non-deterministic retrieval)
     static_queries = get_domain_static_queries(query)
     for sq in static_queries:
         if sq not in all_queries:
@@ -262,9 +418,18 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
     
     vector_results = multi_query_search(all_queries, top_k=top_k)
 
+    # ── 1.5. Graph Re-ranking ─────────────────────────────────────────
+    # Sau khi RAG tìm được top-k, duyệt đồ thị để bổ sung các điều luật
+    # có liên hệ (tham chiếu, liên kết) mà vector search có thể bỏ sót.
+    # VD: RAG tìm được "Điều 7 cấm hành vi" → Graph kéo thêm "Điều 84 mức phạt"
+    kg = get_knowledge_graph()
+    try:
+        vector_results = _expand_via_graph(vector_results, kg, top_extra=3)
+    except Exception as e:
+        logger.warning(f"[GraphExpand] Skipped due to error: {e}")
+
     # ── 2. Knowledge Graph Entity Search ──────────────────────────────
     graph_search_term = entities if entities else query
-    kg = get_knowledge_graph()
     try:
         kg_results = kg.search_entities(graph_search_term, top_k=3)
     except Exception as e:
@@ -302,3 +467,4 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
         "graph_data": graph_data,
         "matched_entities": kg_results,
     }
+

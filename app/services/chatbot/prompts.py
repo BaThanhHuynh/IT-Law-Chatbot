@@ -65,13 +65,24 @@ INTENT_CLASSIFICATION_PROMPT = """Bạn là một hệ thống phân loại ý �
 Nhiệm vụ của bạn là đọc câu hỏi và CHỈ trả về đúng 1 từ: "CHATCHIT" hoặc "LUAT". Không giải thích thêm.
 
 Quy tắc phân loại:
-- CHATCHIT: Bất kỳ câu hỏi nào mang tính chất giao tiếp xã giao (VD: "xin chào", "bạn là ai", "bạn làm được gì", "cảm ơn", "tạm biệt"), câu hỏi vu vơ không liên quan đến pháp luật, hoặc yêu cầu giới thiệu bản thân.
-- LUAT: Chỉ áp dụng khi câu hỏi CHẮC CHẮN chứa các yếu tố pháp lý, luật pháp, xử phạt, quy định công nghệ thông tin, an ninh mạng, thương mại điện tử, v.v.
+- CHATCHIT: Lời chào hỏi, cảm ơn, xã giao, hỏi về bản thân chatbot, hoặc câu hỏi chung chung chưa nêu vấn đề pháp lý cụ thể.
+- LUAT: Câu hỏi YÊU CẦU GIẢI ĐÁP một vấn đề pháp lý CỤ THỂ (hỏi về điều luật, mức phạt, hành vi vi phạm, quyền và nghĩa vụ, tình huống pháp lý...).
 
-Lưu ý quan trọng: Nếu câu hỏi là "xin chào bạn là ai?" -> PHẢI trả về CHATCHIT.
+Lưu ý: Nếu người dùng chỉ NÓI TÊN chủ đề nhưng CHƯA hỏi câu hỏi cụ thể nào → CHATCHIT.
+
+Ví dụ:
+- "xin chào" → CHATCHIT
+- "cảm ơn bạn" → CHATCHIT
+- "tôi có thắc mắc về an ninh mạng, bạn giúp tôi được không?" → CHATCHIT
+- "ok tôi hiểu rồi" → CHATCHIT
+- "bạn là ai?" → CHATCHIT
+- "phát tán mã độc bị phạt bao nhiêu tiền?" → LUAT
+- "điều 7 luật an toàn thông tin quy định gì?" → LUAT
+- "A cài phần mềm trái phép vào máy tính công ty B, A bị xử phạt thế nào?" → LUAT
 
 Câu hỏi: {query}
 """
+
 
 ENTITY_EXTRACTION_PROMPT = """Trích xuất các từ khóa (entity) pháp lý quan trọng nhất từ câu hỏi sau để phục vụ tìm kiếm trong cơ sở dữ liệu pháp luật.
 Loại bỏ các từ nối (của, và, là, thì, mà...). Ưu tiên giữ lại: danh từ chuyên ngành, tên luật/nghị định, số điều khoản, hành vi pháp lý.
@@ -113,6 +124,7 @@ Quy tắc:
 2. KHÔNG tự bịa thêm thông tin không có trong lịch sử.
 3. Nếu câu hỏi mới nhất đã đầy đủ ý nghĩa và không cần ngữ cảnh từ lịch sử, hãy giữ nguyên câu hỏi đó.
 4. CHỈ TRẢ VỀ CÂU HỎI ĐÃ ĐƯỢC VIẾT LẠI, tuyệt đối không giải thích hay thêm bất kỳ từ ngữ nào khác.
+5. QUAN TRỌNG: Nếu câu hỏi mới nhất là lời chào hỏi, cảm ơn, hoặc xã giao (VD: "xin chào", "cảm ơn bạn", "ok"), hãy GIỮ NGUYÊN câu hỏi đó, KHÔNG thêm bất kỳ ngữ cảnh pháp luật nào từ lịch sử.
 
 Ví dụ:
 Lịch sử:
@@ -120,6 +132,12 @@ User: Bản quyền phần mềm máy tính được bảo vệ thế nào?
 Bot: Bản quyền phần mềm máy tính được bảo vệ theo Luật Sở hữu trí tuệ...
 Câu hỏi mới nhất: Hành vi xâm phạm nó bị xử lý ra sao?
 -> Câu hỏi viết lại: Hành vi xâm phạm bản quyền phần mềm máy tính bị xử lý ra sao?
+
+Lịch sử:
+User: Phát tán mã độc bị phạt thế nào?
+Bot: Phát tán mã độc vi phạm Điều 8 Luật An ninh mạng...
+Câu hỏi mới nhất: cảm ơn bạn!
+-> Câu hỏi viết lại: cảm ơn bạn!
 
 Lịch sử:
 {history_context}

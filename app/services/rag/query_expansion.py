@@ -106,6 +106,32 @@ _DOMAIN_STATIC_RULES = [
             "quyền nghĩa vụ thương nhân kinh doanh dịch vụ thương mại điện tử",
         ]
     ),
+    (
+        {"phần mềm độc hại", "mã độc", "gián điệp", "cài đặt phần mềm", "cài lén", "cài phần mềm", "phát tán", "phần mềm trái phép"},
+        [
+            "xử phạt phát tán phần mềm độc hại Nghị định 15/2020 Điều 94",
+            "hành vi bị nghiêm cấm phát tán mã độc phần mềm độc hại Luật An toàn thông tin mạng Điều 7",
+            "vi phạm phòng ngừa phát hiện ngăn chặn xử lý phần mềm độc hại Điều 83 Nghị định 15",
+        ]
+    ),
+    (
+        {"xâm nhập", "truy cập trái phép", "chiếm quyền", "tấn công", "hack"},
+        [
+            "xử phạt xâm nhập trái phép hệ thống thông tin Nghị định 15/2020",
+            "hành vi bị cấm tấn công chiếm quyền điều khiển hệ thống thông tin",
+        ]
+    ),
+]
+
+
+# Word-pair triggers: if ALL words in a pair appear in the query, trigger the rule
+# Format: (list of word-pair sets, index into _DOMAIN_STATIC_RULES to trigger)
+_WORD_PAIR_TRIGGERS = [
+    # "phần mềm" + "cài đặt/cài" + "hệ thống/máy tính" → malware/unauthorized install
+    ({"phần mềm", "cài đặt"}, 5),  # index 5 = malware rule
+    ({"phần mềm", "cài"}, 5),
+    ({"phần mềm", "hệ thống"}, 5),
+    ({"phần mềm", "máy tính"}, 5),
 ]
 
 
@@ -121,12 +147,23 @@ def get_domain_static_queries(query: str) -> list:
     """
     query_lower = query.lower()
     static_queries = []
+    triggered_indices = set()
     
-    for trigger_keywords, queries in _DOMAIN_STATIC_RULES:
-        # Check if ANY trigger keyword appears in the query
+    # Check standard keyword triggers
+    for idx, (trigger_keywords, queries) in enumerate(_DOMAIN_STATIC_RULES):
         if any(kw in query_lower for kw in trigger_keywords):
             static_queries.extend(queries)
+            triggered_indices.add(idx)
             logger.info(f"[DomainStatic] Injected {len(queries)} static queries for topic: {list(trigger_keywords)[:3]}")
+    
+    # Check word-pair triggers (for vague queries where keywords are separated)
+    for word_pair, rule_idx in _WORD_PAIR_TRIGGERS:
+        if rule_idx not in triggered_indices:
+            if all(w in query_lower for w in word_pair):
+                queries = _DOMAIN_STATIC_RULES[rule_idx][1]
+                static_queries.extend(queries)
+                triggered_indices.add(rule_idx)
+                logger.info(f"[DomainStatic] Word-pair trigger {word_pair} → injected {len(queries)} static queries")
     
     return static_queries
 

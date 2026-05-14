@@ -1,7 +1,9 @@
 import json
 import uuid
 import os
+import time
 import concurrent.futures
+from functools import wraps
 from datetime import datetime
 from google import genai
 from google.genai import types
@@ -23,8 +25,30 @@ def get_llm():
         logger.info("[LLM] Gemini client initialized.")
     return _model
 
+def retry_on_503(max_retries=3, backoff_factor=2):
+    """Decorator to retry LLM calls on 503 UNAVAILABLE or 500 errors."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            delay = 2
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    error_str = str(e)
+                    if "503" in error_str or "500" in error_str or "UNAVAILABLE" in error_str or "429" in error_str:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"[{func.__name__}] LLM API overload (503/429). Retrying in {delay}s... (Attempt {attempt+1}/{max_retries})")
+                            time.sleep(delay)
+                            delay *= backoff_factor
+                            continue
+                    # If it's not a retryable error or max retries reached, raise it
+                    raise e
+        return wrapper
+    return decorator
 
 
+@retry_on_503()
 def classify_intent(query: str) -> str:
     """Phân loại ý định người dùng (CHATCHIT hoặc LUAT)"""
     try:
@@ -41,6 +65,7 @@ def classify_intent(query: str) -> str:
     except Exception as e:
         logger.error(f"[Error] Intent classification failed: {e}")
         return "LUAT"  # Fallback to LUAT
+@retry_on_503()
 def rewrite_query(query: str, history_context: str) -> str:
     """Viết lại câu hỏi sử dụng ngữ cảnh từ lịch sử."""
     if not history_context.strip():
@@ -62,6 +87,27 @@ def rewrite_query(query: str, history_context: str) -> str:
         return query
 
 
+@retry_on_503()
+def generate_title(query: str) -> str:
+    """Trích xuất từ khóa pháp lý từ câu hỏi."""
+    try:
+        model = get_llm()
+        prompt = TITLE_PROMPT.format(query=query)
+        response = model.models.generate_content(
+            model="gemini-3.1-flash-lite-preview",
+            contents=prompt
+        )
+        try:
+            text = response.text.strip()
+            return text if text else "Câu hỏi mới"
+        except ValueError:
+            return "Câu hỏi mới"
+    except Exception as e:
+        logger.error(f"[Error] Title generation failed: {e}")
+        return "Câu hỏi mới"
+
+
+@retry_on_503()
 def extract_entities(query: str) -> str:
     """Trích xuất từ khóa pháp lý từ câu hỏi."""
     try:
@@ -81,7 +127,8 @@ def extract_entities(query: str) -> str:
         return query  # Fallback to original query
 
 
-def generate_sub_queries(query: str) -> list:
+@retry_on_503()
+def generate_sub_queries(query: str, num_queries: int = 3) -> list:
     """
     Generate 3 alternative query formulations using LLM for multi-query retrieval.
     Each variant targets a different legal angle:
@@ -135,52 +182,53 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
     if not conversation_id:
         conversation_id = create_conversation(query)
 
-    # 1.5 Contextual Query Rewriting
-    raw_history = get_conversation_history(conversation_id, limit=4) # 2 recent turns
-    history_context = ""
-    for msg in raw_history:
-        role_name = "User" if msg["role"] == "user" else "Bot"
-        history_context += f"{role_name}: {msg['content']}\n"
-    
-    rewritten_query = query
-    if history_context.strip():
-        rewritten_query = rewrite_query(query, history_context)
-        if rewritten_query != query:
-            logger.info(f"[{conversation_id}] Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
-
     # 2. Save user message (original query)
     save_message(conversation_id, "user", query)
 
-    # 3. Chạy song song 3 tác vụ LLM (Intent, Entities, Sub-queries) để giảm độ trễ
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        future_intent = executor.submit(classify_intent, rewritten_query)
-        future_entities = executor.submit(extract_entities, rewritten_query)
-        future_sub_queries = executor.submit(generate_sub_queries, rewritten_query)
-
-        intent = future_intent.result()
-        extracted_entities = future_entities.result()
-        sub_queries = future_sub_queries.result()
-
+    # 3. Phân loại intent ĐẦU TIÊN bằng câu gốc (1 lần gọi API duy nhất)
+    intent = classify_intent(query)
     logger.info(f"[{conversation_id}] Query classified as: {intent}")
 
     if intent == "CHATCHIT":
-        # CHATCHIT MODE: Bypass RAG and Graph search
+        # ═══ CHATCHIT MODE: Đường tắt hoàn toàn ═══
+        # Bỏ qua rewrite, entities, sub-queries, RAG, Graph
         search_results = {"vector_results": []}
         graph_data = {"nodes": [], "edges": []}
-        
-        system_prompt = "Bạn là trợ lý ảo chuyên tư vấn pháp luật CNTT tại Việt Nam. Người dùng đang trò chuyện hoặc chào hỏi thông thường. Hãy đáp lại thân thiện, ngắn gọn và chủ động giới thiệu rằng bạn có thể giải đáp các thắc mắc về Luật An ninh mạng, Giao dịch điện tử, Viễn thông, v.v."
+
+        system_prompt = (
+            "Bạn là trợ lý tư vấn pháp luật CNTT. "
+            "Khi người dùng chào hỏi hoặc hỏi chuyện thông thường, hãy trả lời THẬT NGẮN GỌN: "
+            "tối đa 2-3 câu, không liệt kê, không đề cập điều khoản luật. "
+            "Chỉ cần xác nhận lời cảm ơn hoặc chào lại thân thiện."
+        )
         prompt = query
     else:
-        # LUAT MODE: Full hybrid search pipeline
+        # ═══ LUAT MODE: Full pipeline ═══
+
+        # 3.1 Contextual Query Rewriting (chỉ khi LUAT)
+        raw_history = get_conversation_history(conversation_id, limit=4)
+        history_context = ""
+        for msg in raw_history:
+            role_name = "User" if msg["role"] == "user" else "Bot"
+            history_context += f"{role_name}: {msg['content']}\n"
+
+        rewritten_query = query
+        if history_context.strip():
+            rewritten_query = rewrite_query(query, history_context)
+            if rewritten_query != query:
+                logger.info(f"[{conversation_id}] Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
+
+        # 3.2 Chạy song song entity + sub-queries
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            future_entities = executor.submit(extract_entities, rewritten_query)
+            future_sub_queries = executor.submit(generate_sub_queries, rewritten_query)
+            extracted_entities = future_entities.result()
+            sub_queries = future_sub_queries.result()
+
+        # 3.3 Hybrid search (Vector + Graph)
         try:
-            # Step 1: Đã chạy song song ở trên
             logger.info(f"[{conversation_id}] Extracted entities: {extracted_entities}")
 
-            # Step 2: Đã chạy song song ở trên
-            
-
-
-            # Step 3: Hybrid search
             search_results = hybrid_search(
                 query=rewritten_query,
                 sub_queries=sub_queries,
@@ -233,11 +281,27 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
                     system_instruction=system_prompt,
                 )
             )
-            response = chat.send_message(prompt)
-            answer = response.text
+            
+            # Inline retry logic for the main response generation
+            max_retries = 3
+            delay = 2
+            for attempt in range(max_retries):
+                try:
+                    response = chat.send_message(prompt)
+                    answer = response.text
+                    break
+                except Exception as e:
+                    error_str = str(e)
+                    if "503" in error_str or "500" in error_str or "UNAVAILABLE" in error_str or "429" in error_str:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"[generate_response] Gemini API overload. Retrying in {delay}s... (Attempt {attempt+1}/{max_retries})")
+                            time.sleep(delay)
+                            delay *= 2
+                            continue
+                    raise e
     except Exception as e:
         logger.error(f"[Error] LLM generation failed: {e}")
-        answer = f"Lỗi API key Gemini"
+        answer = f"Hiện tại máy chủ đang quá tải. Xin vui lòng thử lại sau giây lát."
 
     # 6. Build sources list (calibrate raw scores to user-friendly confidence)
     from app.services.rag.embeddings import calibrate_score
