@@ -158,7 +158,7 @@ def generate_sub_queries(query: str, num_queries: int = 3) -> list:
         
         logger.info(f"[MultiQuery] Generated {len(all_queries)} queries:")
         for i, q in enumerate(all_queries):
-            logger.info(f"  [{i}] {q[:80]}")
+            logger.info(f"  [{i}] {q[:200]}")
         
         return all_queries
     except Exception as e:
@@ -185,75 +185,159 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
     # 2. Save user message (original query)
     save_message(conversation_id, "user", query)
 
-    # 3. Phân loại intent ĐẦU TIÊN bằng câu gốc (1 lần gọi API duy nhất)
-    intent = classify_intent(query)
-    logger.info(f"[{conversation_id}] Query classified as: {intent}")
+    # 3. Phân loại intent — Regex trước, LLM sau (tiết kiệm 2-3s cho CHATCHIT)
+    import re as _re
+    _CHATCHIT_PATTERNS = _re.compile(
+        r'^(xin\s*chào|chào\s*bạn|hello|hi\b|hey\b|ok\b|cảm\s*ơn|cám\s*ơn|thanks|thank\s*you'
+        r'|tạm\s*biệt|bye|bạn\s*là\s*ai|bạn\s*tên\s*(gì|j)|bạn\s*có\s*thể\s*(giúp|làm)'
+        r'|tôi\s*hiểu\s*rồi|được\s*rồi|ừ|uh|à|oke|okie|good|tốt|tuyệt|hay|wow'
+        r'|giúp\s*tôi\s*được\s*không|hỗ\s*trợ\s*tôi|có\s*thể\s*giúp'
+        r'|thắc\s*mắc.*bạn\s*giúp)',
+        _re.IGNORECASE
+    )
+
+    query_stripped = query.strip().rstrip('?!.,')
+    if _CHATCHIT_PATTERNS.search(query_stripped) and len(query_stripped) < 120:
+        intent = "CHATCHIT"
+        logger.info(f"[{conversation_id}] Query fast-classified as: CHATCHIT (regex)")
+
+    # ── TÓM TẮT: Phát hiện yêu cầu tóm tắt nội dung vừa trả lời ──
+    elif _re.search(
+        r'(tóm\s*tắt|tóm\s*gọn|rút\s*gọn|ngắn\s*gọn\s*lại|nói\s*ngắn|giải\s*thích\s*ngắn'
+        r'|tổng\s*kết|summary|tl;\s*dr|cho\s*tôi\s*bản\s*tóm|nói\s*lại\s*ngắn)',
+        query_stripped, _re.IGNORECASE
+    ) and len(query_stripped) < 200:
+        intent = "TOMTAT"
+        logger.info(f"[{conversation_id}] Query fast-classified as: TOMTAT (regex)")
+
+        # Lấy tin nhắn assistant gần nhất
+        recent_history = get_conversation_history(conversation_id, limit=4)
+        last_bot_msg = ""
+        for msg in reversed(recent_history):
+            if msg["role"] == "assistant" and len(msg.get("content", "")) > 50:
+                last_bot_msg = msg["content"]
+                break
+
+        if last_bot_msg:
+            try:
+                model = get_llm()
+                summary_response = model.models.generate_content(
+                    model="gemini-3.1-flash-lite-preview",
+                    contents=f"Hãy tóm tắt nội dung sau thành 3-5 ý chính, mỗi ý 1-2 câu ngắn gọn, dùng bullet point:\n\n{last_bot_msg[:3000]}",
+                    config=types.GenerateContentConfig(
+                        system_instruction=(
+                            "Bạn là trợ lý pháp luật CNTT. Tóm tắt nội dung luật thành 3-5 ý chính ngắn gọn. "
+                            "Giữ lại số điều, khoản quan trọng. Dùng bullet point (•). Không thêm thông tin mới."
+                        ),
+                    )
+                )
+                answer = summary_response.text
+            except Exception as e:
+                logger.error(f"[Error] TOMTAT LLM failed: {e}")
+                answer = "Xin lỗi, tôi không thể tóm tắt lúc này. Vui lòng thử lại."
+        else:
+            answer = "Chưa có nội dung luật nào để tóm tắt. Bạn hãy hỏi một câu hỏi về luật trước nhé!"
+
+        save_message(conversation_id, "assistant", answer, [])
+        return {
+            "conversation_id": conversation_id,
+            "answer": answer,
+            "sources": [],
+            "graph_data": {"nodes": [], "edges": []},
+        }
+
+    else:
+        intent = classify_intent(query)
+        logger.info(f"[{conversation_id}] Query classified as: {intent}")
 
     if intent == "CHATCHIT":
-        # ═══ CHATCHIT MODE: Đường tắt hoàn toàn ═══
-        # Bỏ qua rewrite, entities, sub-queries, RAG, Graph
+        # ═══ CHATCHIT MODE: Đường tắt tối đa ═══
+        # Bỏ qua: rewrite, entities, sub-queries, RAG, Graph, chat history nặng
         search_results = {"vector_results": []}
         graph_data = {"nodes": [], "edges": []}
 
-        system_prompt = (
+        chatchit_system = (
             "Bạn là trợ lý tư vấn pháp luật CNTT. "
             "Khi người dùng chào hỏi hoặc hỏi chuyện thông thường, hãy trả lời THẬT NGẮN GỌN: "
             "tối đa 2-3 câu, không liệt kê, không đề cập điều khoản luật. "
             "Chỉ cần xác nhận lời cảm ơn hoặc chào lại thân thiện."
         )
-        prompt = query
-    else:
-        # ═══ LUAT MODE: Full pipeline ═══
 
-        # 3.1 Contextual Query Rewriting (chỉ khi LUAT)
-        raw_history = get_conversation_history(conversation_id, limit=4)
-        history_context = ""
-        for msg in raw_history:
-            role_name = "User" if msg["role"] == "user" else "Bot"
-            history_context += f"{role_name}: {msg['content']}\n"
-
-        rewritten_query = query
-        if history_context.strip():
-            rewritten_query = rewrite_query(query, history_context)
-            if rewritten_query != query:
-                logger.info(f"[{conversation_id}] Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
-
-        # 3.2 Chạy song song entity + sub-queries
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            future_entities = executor.submit(extract_entities, rewritten_query)
-            future_sub_queries = executor.submit(generate_sub_queries, rewritten_query)
-            extracted_entities = future_entities.result()
-            sub_queries = future_sub_queries.result()
-
-        # 3.3 Hybrid search (Vector + Graph)
+        # Gọi LLM trực tiếp (không tạo chat session, không load history đầy đủ)
         try:
-            logger.info(f"[{conversation_id}] Extracted entities: {extracted_entities}")
-
-            search_results = hybrid_search(
-                query=rewritten_query,
-                sub_queries=sub_queries,
-                entities=extracted_entities,
-                top_k=Config.TOP_K_RESULTS,
+            model = get_llm()
+            chatchit_response = model.models.generate_content(
+                model="gemini-3.1-flash-lite-preview",
+                contents=query,
+                config=types.GenerateContentConfig(
+                    system_instruction=chatchit_system,
+                )
             )
-
-            graph_data = search_results.get("graph_data", {"nodes": [], "edges": []})
-            rag_context = get_context_from_results(search_results["vector_results"])
-            graph_context = search_results.get("graph_context", "")
-
+            answer = chatchit_response.text
         except Exception as e:
-            logger.error(f"[Error] Search failed: {e}")
-            rag_context = "Không thể truy xuất dữ liệu."
-            graph_context = ""
-            graph_data = {"nodes": [], "edges": []}
-            search_results = {"vector_results": []}
+            logger.error(f"[Error] CHATCHIT LLM failed: {e}")
+            answer = "Chào bạn! Tôi sẵn sàng hỗ trợ bạn về pháp luật CNTT. Bạn cần tư vấn gì?"
 
-        # Build RAG prompt
-        system_prompt = SYSTEM_PROMPT
-        prompt = RAG_PROMPT_TEMPLATE.format(
-            rag_context=rag_context,
-            graph_context=graph_context,
+        # Save and return immediately — skip source building
+        save_message(conversation_id, "assistant", answer, [])
+        return {
+            "conversation_id": conversation_id,
+            "answer": answer,
+            "sources": [],
+            "graph_data": graph_data,
+        }
+
+    # ═══ LUAT MODE: Full pipeline ═══
+
+    # 3.1 Contextual Query Rewriting (chỉ khi LUAT)
+    raw_history = get_conversation_history(conversation_id, limit=4)
+    history_context = ""
+    for msg in raw_history:
+        role_name = "User" if msg["role"] == "user" else "Bot"
+        history_context += f"{role_name}: {msg['content']}\n"
+
+    rewritten_query = query
+    if history_context.strip():
+        rewritten_query = rewrite_query(query, history_context)
+        if rewritten_query != query:
+            logger.info(f"[{conversation_id}] Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
+
+    # 3.2 Chạy song song entity + sub-queries
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        future_entities = executor.submit(extract_entities, rewritten_query)
+        future_sub_queries = executor.submit(generate_sub_queries, rewritten_query)
+        extracted_entities = future_entities.result()
+        sub_queries = future_sub_queries.result()
+
+    # 3.3 Hybrid search (Vector + Graph)
+    try:
+        logger.info(f"[{conversation_id}] Extracted entities: {extracted_entities}")
+
+        search_results = hybrid_search(
             query=rewritten_query,
+            sub_queries=sub_queries,
+            entities=extracted_entities,
+            top_k=Config.TOP_K_RESULTS,
         )
+
+        graph_data = search_results.get("graph_data", {"nodes": [], "edges": []})
+        rag_context = get_context_from_results(search_results["vector_results"])
+        graph_context = search_results.get("graph_context", "")
+
+    except Exception as e:
+        logger.error(f"[Error] Search failed: {e}")
+        rag_context = "Không thể truy xuất dữ liệu."
+        graph_context = ""
+        graph_data = {"nodes": [], "edges": []}
+        search_results = {"vector_results": []}
+
+    # Build RAG prompt
+    system_prompt = SYSTEM_PROMPT
+    prompt = RAG_PROMPT_TEMPLATE.format(
+        rag_context=rag_context,
+        graph_context=graph_context,
+        query=rewritten_query,
+    )
 
     # 4. Get conversation history for context
     history = get_conversation_history(conversation_id, limit=6)
@@ -325,8 +409,10 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             sources.append({
                 "article": r.get("article", ""),
                 "content": r.get("content", "")[:200],
+                "full_content": r.get("content", ""),
                 "score": calibrate_score(r.get("score", 0)),
                 "doc_title": doc,
+                "so_hieu": r.get("so_hieu", ""),
             })
         if len(sources) >= MAX_SOURCES:
             break
@@ -340,8 +426,10 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
                 sources.append({
                     "article": r.get("article", ""),
                     "content": r.get("content", "")[:200],
+                    "full_content": r.get("content", ""),
                     "score": calibrate_score(r.get("score", 0)),
                     "doc_title": r.get("doc_title", ""),
+                    "so_hieu": r.get("so_hieu", ""),
                 })
             if len(sources) >= MAX_SOURCES:
                 break
@@ -355,8 +443,10 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             sources.append({
                 "article": entity.get("name", ""),
                 "content": entity.get("description", "")[:200],
+                "full_content": entity.get("description", ""),
                 "score": calibrate_score(real_score),
                 "doc_title": "Mạng Lưới Tri Thức (GraphRAG)",
+                "so_hieu": "",
             })
 
     # 7. Save assistant message

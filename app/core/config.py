@@ -23,7 +23,7 @@ class Config:
 
     # API Settings
     API_PORT = int(os.getenv("API_PORT", "5000"))
-    API_DEBUG = os.getenv("API_DEBUG", "true").lower() == "true"
+    API_DEBUG = os.getenv("API_DEBUG", "false").lower() == "true"
 
     # Security — CORS & Authentication
     # Comma-separated list of allowed origins, e.g. "http://localhost:5000,https://myapp.com"

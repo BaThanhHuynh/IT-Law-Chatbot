@@ -4,27 +4,27 @@
 
 :root {
     /* Color palette */
-    --bg-primary: #212121;
-    --bg-secondary: #171717;
-    --bg-tertiary: #2f2f2f;
-    --bg-card: #2f2f2f;
-    --bg-hover: #383838;
-    --bg-input: #2f2f2f;
+    --bg-primary: #1e1e1e;
+    --bg-secondary: #141414;
+    --bg-tertiary: #2a2a2a;
+    --bg-card: #2a2a2a;
+    --bg-hover: #333333;
+    --bg-input: #2a2a2a;
 
     --text-primary: #ececec;
     --text-secondary: #b4b4b4;
     --text-muted: #8e8e8e;
-    --text-accent: #10a37f;
+    --text-accent: #50e6b4;
 
-    --accent-primary: #10a37f;
-    --accent-secondary: #19c37d;
-    --accent-gradient: linear-gradient(135deg, #10a37f, #19c37d);
-    --accent-glow: rgba(16, 163, 127, 0.25);
+    --accent-primary: #50e6b4;
+    --accent-secondary: #50e6b4;
+    --accent-gradient: linear-gradient(135deg, #34d9a5, #50e6b4);
+    --accent-glow: rgba(80, 230, 180, 0.25);
 
     --border-color: rgba(255, 255, 255, 0.1);
-    --border-active: rgba(16, 163, 127, 0.4);
+    --border-active: rgba(80, 230, 180, 0.4);
 
-    --success: #34d399;
+    --success: #50e6b4;
     --warning: #fb923c;
     --danger: #f87171;
     --info: #60a5fa;
@@ -62,15 +62,17 @@
     --text-primary: #1a1a2e;
     --text-secondary: #4a4a68;
     --text-muted: #8e8ea0;
-    --text-accent: #0d8a6a;
+    --text-accent: #20c997;
 
-    --accent-primary: #0d8a6a;
-    --accent-secondary: #10a37f;
-    --accent-gradient: linear-gradient(135deg, #0d8a6a, #10a37f);
-    --accent-glow: rgba(13, 138, 106, 0.15);
+    --accent-primary: #20c997;
+    --accent-secondary: #20c997;
+    --accent-gradient: linear-gradient(135deg, #1ab888, #20c997);
+    --accent-glow: rgba(32, 201, 151, 0.18);
 
     --border-color: rgba(0, 0, 0, 0.1);
-    --border-active: rgba(13, 138, 106, 0.4);
+    --border-active: rgba(32, 201, 151, 0.4);
+
+    --success: #20c997;
 
     --glass: rgba(0, 0, 0, 0.02);
     --glass-border: rgba(0, 0, 0, 0.06);
@@ -211,25 +213,6 @@ body {
     align-items: center;
     justify-content: space-between;
     padding: 16px 16px 12px;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.logo {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.logo-icon {
-    width: 36px;
-    height: 36px;
-    background: var(--accent-gradient);
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    box-shadow: var(--shadow-glow);
 }
 
 .logo-text {
@@ -241,13 +224,13 @@ body {
     background-clip: text;
 }
 
-.btn-new-chat {
-    width: 36px;
-    height: 36px;
-    border: 1px solid var(--border-color);
+.btn-close-sidebar {
+    width: 32px;
+    height: 32px;
+    border: none;
     border-radius: var(--radius-sm);
-    background: var(--glass);
-    color: var(--text-secondary);
+    background: transparent;
+    color: var(--text-muted);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -255,11 +238,76 @@ body {
     transition: all var(--transition);
 }
 
-.btn-new-chat:hover {
+.btn-close-sidebar:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+/* ---- Sidebar Actions (New Chat + Search) ---- */
+.sidebar-actions {
+    padding: 0 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.btn-new-chat-full {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: var(--glass);
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: all var(--transition);
+}
+
+.btn-new-chat-full:hover {
     background: var(--accent-primary);
     color: white;
     border-color: var(--accent-primary);
     box-shadow: var(--shadow-glow);
+}
+
+.sidebar-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.sidebar-search .search-icon {
+    position: absolute;
+    left: 10px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.sidebar-search input {
+    width: 100%;
+    padding: 8px 12px 8px 34px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.8rem;
+    outline: none;
+    transition: all var(--transition);
+}
+
+.sidebar-search input::placeholder {
+    color: var(--text-muted);
+}
+
+.sidebar-search input:focus {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
 .sidebar-conversations {
@@ -375,7 +423,7 @@ body {
     align-items: center;
     padding: 0 20px;
     border-bottom: 1px solid var(--border-color);
-    background: rgba(15, 15, 26, 0.8);
+    background: rgba(30, 30, 30, 0.95);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     gap: 12px;
@@ -605,7 +653,7 @@ body {
 }
 
 .message.assistant .message-content {
-    background: #262626;
+    background: var(--bg-tertiary);
     border: 1px solid var(--border-color);
     border-radius: 1.5rem;
     padding: 12px 20px;
@@ -858,4 +906,144 @@ body {
 @keyframes blink {
     0%, 100% { border-color: var(--text-color); }
     50% { border-color: transparent; }
+}
+
+/* ---- Clickable Source Items ---- */
+.source-item-clickable {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    transition: all var(--transition);
+}
+
+.source-item-clickable:hover {
+    background: var(--accent-glow);
+    border-color: var(--accent-primary);
+    transform: translateX(4px);
+}
+
+.source-item-text {
+    flex: 1;
+}
+
+.source-item-icon {
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity var(--transition);
+    color: var(--accent-primary);
+    margin-left: 8px;
+}
+
+.source-item-clickable:hover .source-item-icon {
+    opacity: 1;
+}
+
+/* ---- Source Detail Modal ---- */
+.source-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+}
+
+.source-modal-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+.source-modal {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    width: min(90vw, 720px);
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: var(--shadow-lg);
+    transform: translateY(20px);
+    transition: transform 0.3s ease;
+}
+
+.source-modal-overlay.active .source-modal {
+    transform: translateY(0);
+}
+
+.source-modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border-color);
+    gap: 16px;
+}
+
+.source-modal-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.4;
+}
+
+.source-modal-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+    display: block;
+}
+
+.source-modal-close {
+    background: none;
+    border: none;
+    font-size: 1.6rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all var(--transition);
+}
+
+.source-modal-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+}
+
+.source-modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.source-legal-text {
+    font-size: 0.9rem;
+    line-height: 1.8;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.source-legal-text strong {
+    color: var(--accent-primary);
+    font-weight: 600;
+}
+
+/* Light mode overrides for modal */
+[data-theme="light"] .source-modal-overlay {
+    background: rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="light"] .source-modal {
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.15);
 }

@@ -94,3 +94,71 @@ async def get_kg_data(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@chat_router.get("/article-full")
+async def get_article_full(
+    dieu_so: str = Query(..., description="Số điều (VD: 83)"),
+    so_hieu: str = Query("", description="Số hiệu văn bản (VD: 15/2020/NĐ-CP)")
+):
+    """
+    Lấy toàn bộ nội dung gốc của 1 điều luật từ Qdrant.
+    Ghép tất cả chunks (noi_dung_chunk) theo thứ tự sub_index.
+    """
+    from app.services.rag.retriever import get_qdrant_client
+    from app.core.config import Config
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+    try:
+        client = get_qdrant_client()
+
+        # Build filter: dieu_so bắt buộc, so_hieu tuỳ chọn
+        conditions = [
+            FieldCondition(key="dieu_so", match=MatchValue(value=str(dieu_so)))
+        ]
+        if so_hieu:
+            conditions.append(
+                FieldCondition(key="so_hieu", match=MatchValue(value=str(so_hieu)))
+            )
+
+        results, _ = client.scroll(
+            collection_name=Config.QDRANT_COLLECTION,
+            scroll_filter=Filter(must=conditions),
+            limit=50,
+            with_payload=True,
+        )
+
+        if not results:
+            return {"success": True, "data": {"full_text": "Không tìm thấy nội dung điều luật.", "chunks": 0}}
+
+        # Sort chunks by sub_index to reconstruct original order
+        chunks = sorted(results, key=lambda p: int(p.payload.get("chunk_sub_index", 0)))
+
+        # Reconstruct full text from all chunks
+        full_parts = []
+        for point in chunks:
+            p = point.payload
+            chunk_text = p.get("noi_dung_chunk", "")
+            if chunk_text and chunk_text not in full_parts:
+                full_parts.append(chunk_text)
+
+        full_text = "\n".join(full_parts)
+
+        # Get metadata from first chunk
+        meta = chunks[0].payload
+        return {
+            "success": True,
+            "data": {
+                "full_text": full_text,
+                "dieu_so": meta.get("dieu_so", ""),
+                "dieu_ten": meta.get("dieu_ten", ""),
+                "ten_van_ban": meta.get("ten_van_ban", ""),
+                "so_hieu": meta.get("so_hieu", ""),
+                "chuong_so": meta.get("chuong_so", ""),
+                "chuong_ten": meta.get("chuong_ten", ""),
+                "chunks": len(chunks),
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+

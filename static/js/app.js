@@ -5,6 +5,7 @@
 const API_BASE = '';  // Same origin
 let currentConversationId = null;
 let isLoading = false;
+let currentChatAbortController = null; // Abort pending chat request on conversation switch
 
 
 // ---- DOM Elements ----
@@ -43,6 +44,19 @@ function setupEventListeners() {
     btnNewChat.addEventListener('click', newConversation);
     btnToggleSidebar.addEventListener('click', toggleSidebar);
 
+    // Close sidebar button (inside sidebar)
+    document.getElementById('btnCloseSidebar').addEventListener('click', toggleSidebar);
+
+    // Search conversations
+    document.getElementById('searchConversations').addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase().trim();
+        const items = conversationList.querySelectorAll('.conversation-item');
+        items.forEach(item => {
+            const title = item.querySelector('.conv-title')?.textContent.toLowerCase() || '';
+            item.style.display = title.includes(query) ? '' : 'none';
+        });
+    });
+
 
     messageInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -59,12 +73,13 @@ function setupEventListeners() {
 }
 
 // ---- API Calls ----
-async function apiCall(url, method = 'GET', data = null) {
+async function apiCall(url, method = 'GET', data = null, signal = null) {
     const options = {
         method,
         headers: { 'Content-Type': 'application/json' },
     };
     if (data) options.body = JSON.stringify(data);
+    if (signal) options.signal = signal;
 
     const response = await fetch(`${API_BASE}${url}`, options);
     return response.json();
@@ -123,6 +138,14 @@ function hideConversation(conversationId) {
 }
 
 async function loadConversation(conversationId) {
+    // Abort any pending chat request before switching
+    if (currentChatAbortController) {
+        currentChatAbortController.abort();
+        currentChatAbortController = null;
+        isLoading = false;
+        btnSend.disabled = false;
+    }
+
     currentConversationId = conversationId;
 
     // Update UI
@@ -154,6 +177,14 @@ async function loadConversation(conversationId) {
 }
 
 function newConversation() {
+    // Abort any pending chat request before switching
+    if (currentChatAbortController) {
+        currentChatAbortController.abort();
+        currentChatAbortController = null;
+        isLoading = false;
+        btnSend.disabled = false;
+    }
+
     currentConversationId = null;
     welcomeScreen.style.display = 'flex';
     messagesContainer.style.display = 'none';
@@ -188,14 +219,28 @@ async function sendMessage() {
     // Show typing indicator
     const typingEl = showTypingIndicator();
 
+    // Capture the conversation ID at send-time to detect if user switches mid-request
+    const sendConversationId = currentConversationId;
+
+    // Create AbortController for this request
+    if (currentChatAbortController) currentChatAbortController.abort();
+    currentChatAbortController = new AbortController();
+    const signal = currentChatAbortController.signal;
+
     try {
         const result = await apiCall('/api/chat', 'POST', {
             message: message,
             conversation_id: currentConversationId,
-        });
+        }, signal);
 
-        // Remove typing indicator
-        typingEl.remove();
+        // Check if user switched conversations while waiting
+        if (currentConversationId !== sendConversationId && sendConversationId !== null) {
+            console.log('[sendMessage] Conversation switched during request, discarding stale response.');
+            return;
+        }
+
+        // Remove typing indicator (only if still in DOM)
+        if (typingEl.parentNode) typingEl.remove();
 
         if (result.success) {
             const data = result.data;
@@ -204,16 +249,22 @@ async function sendMessage() {
             // Append assistant message with animation (animate = true)
             appendMessage('assistant', data.answer, data.sources, true);
 
-
             // Refresh conversation list
             loadConversations();
         } else {
             appendMessage('assistant', `❌ Lỗi: ${result.error || 'Không xác định'}`);
         }
     } catch (e) {
-        typingEl.remove();
+        // If aborted (user switched conversation), silently ignore
+        if (e.name === 'AbortError') {
+            console.log('[sendMessage] Request aborted due to conversation switch.');
+            return;
+        }
+        if (typingEl.parentNode) typingEl.remove();
         appendMessage('assistant', '❌ Lỗi kết nối server. Vui lòng kiểm tra server đang chạy.');
         console.error('Send message error:', e);
+    } finally {
+        currentChatAbortController = null;
     }
 
     isLoading = false;
@@ -240,11 +291,22 @@ function appendMessage(role, content, sources = null, animate = false) {
             sourcesHtml = `
                 <div class="message-sources">
                     <div class="sources-title">Nguồn trích dẫn</div>
-                    ${parsedSources.map(s => `
-                        <div class="source-item">
-                            <span>${escapeHtml(s.doc_title || '')} ${s.so_hieu ? '(' + escapeHtml(s.so_hieu) + ')' : ''} ${s.article ? '- ' + escapeHtml(s.article) : ''}</span>
-                        </div>
-                    `).join('')}
+                    ${parsedSources.map((s, i) => {
+                        const fullContent = escapeHtml(s.full_content || s.content || '');
+                        const docTitle = escapeHtml(s.doc_title || '');
+                        const soHieu = escapeHtml(s.so_hieu || '');
+                        const article = escapeHtml(s.article || '');
+                        return `
+                        <div class="source-item source-item-clickable"
+                             onclick="openSourceModal(this)"
+                             data-full-content="${fullContent}"
+                             data-doc-title="${docTitle}"
+                             data-so-hieu="${soHieu}"
+                             data-article="${article}">
+                            <span class="source-item-text">${docTitle} ${soHieu ? '(' + soHieu + ')' : ''} ${article ? '- ' + article : ''}</span>
+                            <svg class="source-item-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        </div>`;
+                    }).join('')}
                 </div>`;
         }
     }
@@ -283,8 +345,15 @@ function appendMessage(role, content, sources = null, animate = false) {
     }
 }
 
-async function typeWriterHTML(el, htmlString, speed = 10) {
+async function typeWriterHTML(el, htmlString, speed = 15) {
     el.innerHTML = '';
+
+    // Adaptive speed: short text (CHATCHIT) → slower, visible effect
+    // Long text (LUAT) → faster, skip more chars per frame
+    const plainTextLen = htmlString.replace(/<[^>]*>/g, '').length;
+    const charsPerFrame = plainTextLen < 150 ? 3 : 20;
+    const frameDelay = plainTextLen < 150 ? 20 : speed;
+
     let cursor = 0;
     while (cursor < htmlString.length) {
         if (htmlString[cursor] === '<') {
@@ -302,14 +371,14 @@ async function typeWriterHTML(el, htmlString, speed = 10) {
                 cursor++;
             }
         } else {
-            cursor += 20; // Tăng lên 20 ký tự mỗi lần
+            cursor += charsPerFrame;
             if (cursor > htmlString.length) cursor = htmlString.length;
         }
 
         // Thêm con trỏ nhấp nháy giả
         el.innerHTML = htmlString.substring(0, cursor) + '<span style="border-right: 2px solid var(--text-color); margin-left: 2px; animation: blink 1s step-end infinite;"></span>';
         scrollToBottom();
-        await new Promise(r => setTimeout(r, speed));
+        await new Promise(r => setTimeout(r, frameDelay));
     }
     el.innerHTML = htmlString;
 }
@@ -430,3 +499,84 @@ function copyToClipboard(btn) {
         }, 2000);
     });
 }
+
+// ---- Source Modal ----
+function openSourceModal(el) {
+    const modal = document.getElementById('sourceModal');
+    const title = document.getElementById('sourceModalTitle');
+    const subtitle = document.getElementById('sourceModalSubtitle');
+    const body = document.getElementById('sourceModalBody');
+
+    const article = el.dataset.article || '';
+    const docTitle = el.dataset.docTitle || '';
+    const soHieu = el.dataset.soHieu || '';
+
+    title.textContent = article || docTitle;
+    subtitle.textContent = docTitle + (soHieu ? ` (${soHieu})` : '');
+
+    // Show loading state
+    body.innerHTML = '<div style="text-align:center;color:var(--text-muted);padding:40px">Đang tải nội dung điều luật...</div>';
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden';
+
+    // Extract dieu_so from article string: "Điều 83. ..." → "83"
+    const dieuMatch = article.match(/Điều\s+(\d+)/);
+    const dieuSo = dieuMatch ? dieuMatch[1] : '';
+
+    if (!dieuSo) {
+        // Fallback to data attribute content
+        const fallback = el.dataset.fullContent || 'Không có nội dung chi tiết.';
+        body.innerHTML = `<div class="source-legal-text">${formatLegalText(fallback)}</div>`;
+        return;
+    }
+
+    // Fetch full article from API
+    fetch(`/api/article-full?dieu_so=${encodeURIComponent(dieuSo)}&so_hieu=${encodeURIComponent(soHieu)}`)
+        .then(r => r.json())
+        .then(result => {
+            if (result.success && result.data) {
+                const d = result.data;
+                // Update title with full info from API
+                if (d.dieu_ten) {
+                    title.textContent = `Điều ${d.dieu_so}. ${d.dieu_ten}`;
+                }
+                if (d.ten_van_ban) {
+                    subtitle.textContent = d.ten_van_ban + (d.so_hieu ? ` (${d.so_hieu})` : '');
+                    if (d.chuong_ten) {
+                        subtitle.textContent += ` — Chương ${d.chuong_so}: ${d.chuong_ten}`;
+                    }
+                }
+                body.innerHTML = `<div class="source-legal-text">${formatLegalText(d.full_text)}</div>`;
+            } else {
+                body.innerHTML = '<div style="color:var(--danger);padding:20px">Không tìm thấy nội dung.</div>';
+            }
+        })
+        .catch(() => {
+            // Fallback to data attribute
+            const fallback = el.dataset.fullContent || 'Lỗi tải nội dung.';
+            body.innerHTML = `<div class="source-legal-text">${formatLegalText(fallback)}</div>`;
+        });
+}
+
+function formatLegalText(text) {
+    return text
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/\n/g, '<br>')
+        .replace(/(Điều\s+\d+[a-zđ]*\.?\s*[^<]*)/gi, '<strong>$1</strong>')
+        .replace(/(Khoản\s+\d+)/gi, '<strong>$1</strong>')
+        .replace(/(Điểm\s+[a-zđ]\))/gi, '<strong>$1</strong>');
+}
+
+function closeSourceModal() {
+    const modal = document.getElementById('sourceModal');
+    modal.classList.remove('active');
+    document.body.style.overflow = '';
+}
+
+document.getElementById('sourceModalClose').addEventListener('click', closeSourceModal);
+document.getElementById('sourceModal').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeSourceModal();
+});
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSourceModal();
+});
