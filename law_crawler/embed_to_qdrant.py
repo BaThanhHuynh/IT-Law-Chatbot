@@ -3,9 +3,6 @@ embed_to_qdrant.py
 ==================
 Đọc law_chunks.jsonl → embed bằng PhoBERT → nạp vào Qdrant
 
-AI Engineer: Phan Quyết Tâm Phú
-Project: Chatbot AI tra cứu Luật CNTT VN
-
 Cài đặt:
     pip install transformers torch qdrant-client tqdm
 

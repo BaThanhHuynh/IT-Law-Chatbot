@@ -21,8 +21,8 @@
     --accent-gradient: linear-gradient(135deg, #34d9a5, #50e6b4);
     --accent-glow: rgba(80, 230, 180, 0.25);
 
-    --border-color: rgba(255, 255, 255, 0.1);
-    --border-active: rgba(80, 230, 180, 0.4);
+    --border-color: transparent;
+    --border-active: transparent;
 
     --success: #50e6b4;
     --warning: #fb923c;
@@ -30,7 +30,7 @@
     --info: #60a5fa;
 
     --glass: rgba(255, 255, 255, 0.03);
-    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-border: transparent;
 
     --sidebar-width: 280px;
     --graph-width: 0;
@@ -69,13 +69,13 @@
     --accent-gradient: linear-gradient(135deg, #1ab888, #20c997);
     --accent-glow: rgba(32, 201, 151, 0.18);
 
-    --border-color: rgba(0, 0, 0, 0.1);
-    --border-active: rgba(32, 201, 151, 0.4);
+    --border-color: transparent;
+    --border-active: transparent;
 
     --success: #20c997;
 
     --glass: rgba(0, 0, 0, 0.02);
-    --glass-border: rgba(0, 0, 0, 0.06);
+    --glass-border: transparent;
 
     --shadow-sm: 0 2px 4px rgba(0,0,0,0.06);
     --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
@@ -96,8 +96,9 @@
 }
 
 [data-theme="light"] .message.user .message-content {
-    background: var(--accent-primary);
-    color: #ffffff;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
 }
 
 [data-theme="light"] .input-area {

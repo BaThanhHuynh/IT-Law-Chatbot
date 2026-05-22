@@ -1,24 +1,3 @@
-"""
-law_crawler.py
-==============
-Crawl dữ liệu từ folder chứa file DOCX/PDF luật và nghị định,
-parse ra cấu trúc: tên văn bản → chương → mục → điều → nội dung,
-sau đó xuất ra file Excel với schema đầy đủ phục vụ pipeline RAG.
-
-DE: Lục Sỹ Minh Hiền  |  Project: Chatbot CNTT VN
-Stack: python-docx + openpyxl + re
-
-Cách dùng:
-    python law_crawler.py --input ./data/raw --output ./data/law_data_output.xlsx
-
-Schema output:
-    id_row | source_file | ten_van_ban | so_hieu | so_vbhn | loai_van_ban
-    co_quan_ban_hanh | ngay_ban_hanh | ngay_hieu_luc | ngay_het_hieu_luc
-    trang_thai | sua_doi_boi | ban_su_dung | nhom | ghi_chu
-    chuong_so | chuong_ten | muc_so | muc_ten
-    dieu_so | dieu_ten | noi_dung_dieu | do_dai_ky_tu | chunk_id
-"""
-
 import os
 import re
 import sys
@@ -85,6 +64,14 @@ RE_FOOTNOTE_ITEM = re.compile(r"^\[\d+\]")
 RE_CITATION_DIEU = re.compile(r"^điều\s+\d+\s+và\s+điều\s+\d+\s+của", re.IGNORECASE)
 # Dòng ký xác thực cuối VBHN: "VĂN PHÒNG QUỐC HỘI", "XÁC THỰC VĂN BẢN"...
 RE_VBHN_CLOSE = re.compile(r"^(văn phòng quốc hội|văn phòng chính phủ|xác thực văn bản|số:\s*\d|hà nội,|tp\.\s*hồ|chủ nhiệm|tổng thư ký|số:\s*\d+\/vbhn)", re.IGNORECASE)
+# Phụ lục / Mẫu đơn: các biểu mẫu, form khiếu nại đính kèm cuối văn bản
+# Điều 1,2,3 trong mẫu KHOONG phải là Điều của văn bản luật
+RE_APPENDIX = re.compile(
+    r"^(phụ\s*lục|mẫu\s*số|biểu\s*mẫu|bản\s*khai|mẫu\s*đơn"
+    r"|ban\s*hành\s*kèm\s*theo|danh\s*mục\s*phụ\s*lục"
+    r"|mẫu\s*[A-ZĐ]|\(ban\s*hành\s*kèm)",
+    re.IGNORECASE
+)
 
 
 # ── Helper functions ─────────────────────────────────────────────────────────
@@ -210,11 +197,27 @@ def parse_docx(filepath: str) -> list[dict]:
 
     # Flag: đã vào vùng footnote/phụ lục cuối VBHN → bỏ qua hoàn toàn
     in_footnote_zone = False
+    in_appendix_zone = False
 
     for para in doc.paragraphs:
         text = normalize_text(para.text)
         if not text:
             continue
+
+        # ── Nhận diện và bỏ qua vùng PHỤ LỤC / Mẫu đơn cuối văn bản ─────────
+        # Khi gặp "Điều 1, 2, 3" trong Mẫu khiếu nại → bỏ qua,
+        # không nhầm với Điều thật của văn bản luật
+        if RE_APPENDIX.match(text):
+            if not in_appendix_zone:
+                log.info(f"    └─ Phát hiện PHỤ LỤC/Mẫu tại: '{text[:60]}...' → bỏ qua phần sau")
+            in_appendix_zone = True
+            flush_dieu()  # lưu điều cuối cùng trước phụ lục
+            cur_dieu_so = ""
+            cur_content_lines = []
+            continue
+
+        if in_appendix_zone:
+            continue  # bỏ qua toàn bộ nội dung trong vùng phụ lục/mẫu
 
         # ── Nhận diện và bỏ qua vùng footnote/phụ lục cuối VBHN ─────────────
         # Vùng này xuất hiện sau nội dung điều cuối cùng, bắt đầu bằng:

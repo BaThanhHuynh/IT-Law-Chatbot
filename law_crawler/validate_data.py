@@ -7,8 +7,6 @@ Kiểm tra chất lượng dữ liệu sau khi crawl:
 - Phân bố độ dài chunk (cho RAG chunking strategy)
 - Thống kê theo văn bản
 
-DE: Lục Sỹ Minh Hiền  |  Project: Chatbot CNTT VN
-
 Cách dùng:
     python validate_data.py --input ./data/law_data_output.xlsx
 """

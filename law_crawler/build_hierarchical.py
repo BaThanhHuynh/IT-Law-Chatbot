@@ -8,10 +8,9 @@ Thay vào đó: thêm trường "full_dieu_text" vào PAYLOAD của mỗi child 
 → Khi retrieve child, lấy full_dieu_text đưa vào LLM ngay, không cần round-trip thêm.
 → Đơn giản, ít thay đổi pipeline, phù hợp deadline đồ án.
 
-Với điều quá dài (> 4000 ký tự): cap parent ở 4000 ký tự + note "[Xem thêm...]"
+Với điều quá dài (> 8000 ký tự): cap parent ở 8000 ký tự + note "[Xem thêm...]"
 để tránh làm LLM context quá lớn.
 
-DE: Lục Sỹ Minh Hiền
 Cách dùng:
     python build_hierarchical.py \
         --chunks data/law_chunks.jsonl \
@@ -30,7 +29,7 @@ from collections import defaultdict
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger(__name__)
 
-PARENT_MAX_LEN = 4000   # cap độ dài full_dieu_text đưa vào LLM context
+PARENT_MAX_LEN = 8000   # cap độ dài full_dieu_text đưa vào LLM context
 EXCEL_MAX_LEN  = 32767  # flag Excel truncate
 
 

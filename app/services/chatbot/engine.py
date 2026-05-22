@@ -331,6 +331,27 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         graph_data = {"nodes": [], "edges": []}
         search_results = {"vector_results": []}
 
+    # ── Auto-inject Điều 4 NĐ 15/2020 (quy tắc phạt cá nhân = 1/2 tổ chức) ──
+    import re as _re_ctx
+    _PENALTY_KEYWORDS = _re_ctx.compile(
+        r'(xử\s*phạt|mức\s*phạt|phạt\s*tiền|vi\s*phạm\s*hành\s*chính|chế\s*tài|bị\s*phạt'
+        r'|xử\s*lý|hình\s*thức.*phạt|xử\s*phạt\s*bổ\s*sung|khắc\s*phục)',
+        _re_ctx.IGNORECASE
+    )
+    if _PENALTY_KEYWORDS.search(rewritten_query) or _PENALTY_KEYWORDS.search(query):
+        dieu4_context = (
+            "\n\n--- Đoạn BỔ SUNG [Nghị định 15/2020/NĐ-CP - Điều 4. Quy định về mức phạt tiền] (QUY TẮC NỀN TẢNG) ---\n"
+            "3. Mức phạt tiền quy định tại Chương II của Nghị định này là mức phạt tiền đối với tổ chức. "
+            "Đối với cùng một hành vi vi phạm hành chính thì mức phạt tiền đối với cá nhân bằng 1/2 mức phạt tiền đối với tổ chức.\n"
+            "4. Thẩm quyền xử phạt vi phạm hành chính quy định tại Chương III của Nghị định này là thẩm quyền áp dụng "
+            "đối với một hành vi vi phạm hành chính của cá nhân."
+        )
+        rag_context += dieu4_context
+        logger.info(f"[{conversation_id}] Auto-injected Điều 4 NĐ 15/2020 (penalty ÷2 rule)")
+
+    # ── Thêm structured markers [KHOẢN] [ĐIỂM] để LLM dễ phân biệt ──
+    rag_context = _re_ctx.sub(r'(?m)^(\d+)\.\s+', r'\n**[KHOẢN \1]** ', rag_context)
+
     # Build RAG prompt
     system_prompt = SYSTEM_PROMPT
     prompt = RAG_PROMPT_TEMPLATE.format(

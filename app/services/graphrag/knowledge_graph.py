@@ -34,8 +34,8 @@ class KnowledgeGraph:
 
     def search_entities(self, query: str, top_k: int = 5, min_score: float = 0.35) -> list:
         """
-        Search entities by name/description using keyword match in Neo4j,
-        then re-rank using real cosine similarity from the embedding model.
+        Search entities by name/description using Neo4j Vector Index (entity_embedding_idx),
+        falling back to keyword match with RAM-based cosine similarity if vector search fails.
         
         Applies query expansion to handle abbreviations (CNTT, SHTT, etc.)
         
@@ -46,10 +46,47 @@ class KnowledgeGraph:
         """
         from app.services.rag.embeddings import get_embedding, cosine_similarity
 
-        # Apply abbreviation expansion for broader keyword matching
+        # Apply abbreviation expansion for broader matching
         expanded_query = expand_abbreviations(query)
-        
-        # Combine words from both original and expanded queries for keyword search
+        query_embedding = get_embedding(expanded_query)
+
+        # Step 1: Attempt Neo4j Vector Search
+        cypher_vector = """
+        CALL db.index.vector.queryNodes('entity_embedding_idx', $top_k, $query_embedding)
+        YIELD node, score
+        RETURN node.entity_id AS entity_id, node.name AS name, 
+               node.description AS description, labels(node) AS labels, score
+        """
+        try:
+            results = self.graph.query(cypher_vector, params={
+                "query_embedding": query_embedding.tolist(),
+                "top_k": top_k
+            })
+            
+            if results:
+                scored = []
+                for r in results:
+                    # Neo4j vector search cosine score is mapped, filter by min_score
+                    score = r.get("score", 0.0)
+                    if score < min_score:
+                        continue
+                    
+                    labels = [l for l in r.get("labels", []) if l != "Entity"]
+                    entity_type = labels[0] if labels else "UNKNOWN"
+                    scored.append({
+                        "entity": {
+                            "entity_id": r["entity_id"],
+                            "name": r["name"],
+                            "description": r["description"],
+                            "entity_type": entity_type
+                        },
+                        "score": round(score, 3)
+                    })
+                return scored
+        except Exception as e:
+            logger.warning(f"Neo4j Vector Search failed, falling back to keyword search: {e}")
+
+        # Step 2: Fallback to keyword-based candidate retrieval + RAM-based cosine similarity
         all_words = set()
         for text in [query, expanded_query]:
             all_words.update(w.lower() for w in text.split() if len(w) >= 2)
@@ -58,36 +95,26 @@ class KnowledgeGraph:
         if not words:
             return []
 
-        # Step 1: Keyword-based candidate retrieval from Neo4j (cast a wider net)
-        cypher = """
+        cypher_keyword = """
         MATCH (n:Entity)
         WHERE any(word in $words WHERE toLower(n.name) CONTAINS word OR toLower(n.description) CONTAINS word)
         RETURN n.entity_id AS entity_id, n.name AS name, n.description AS description, labels(n) AS labels
-        LIMIT $top_k
+        LIMIT $limit
         """
         
-        results = self.graph.query(cypher, params={"words": words, "top_k": top_k * 3})
-        
+        results = self.graph.query(cypher_keyword, params={"words": words, "limit": top_k * 3})
         if not results:
             return []
-
-        # Step 2: Compute real cosine similarity between EXPANDED query and each entity
-        # Use expanded query for embedding to match entity descriptions better
-        query_embedding = get_embedding(expanded_query)
 
         scored = []
         for r in results:
             labels = [l for l in r.get("labels", []) if l != "Entity"]
             entity_type = labels[0] if labels else "UNKNOWN"
             
-            # Build entity text = name + description for semantic comparison
             entity_text = f"{r.get('name', '')}. {r.get('description', '')}"
             entity_embedding = get_embedding(entity_text)
-            
-            # Real cosine similarity score
             sim_score = cosine_similarity(query_embedding, entity_embedding)
             
-            # Filter out entities below the minimum relevance threshold
             if sim_score < min_score:
                 continue
 

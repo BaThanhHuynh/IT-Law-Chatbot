@@ -52,10 +52,15 @@ def migrate_to_neo4j():
         logger.error(f"Lỗi khi tải mô hình embedding: {e}")
         return
 
-    logger.info(f"Đang kết nối đến Neo4j tại {Config.NEO4J_URI}...")
+    neo4j_uri = Config.NEO4J_URI
+    # Nếu chạy bên ngoài container Docker (Windows Host) nhưng URI là host.docker.internal thì chuyển thành localhost
+    if "host.docker.internal" in neo4j_uri and not os.path.exists("/.dockerenv"):
+        neo4j_uri = neo4j_uri.replace("host.docker.internal", "localhost")
+
+    logger.info(f"Đang kết nối đến Neo4j tại {neo4j_uri}...")
     try:
         driver = GraphDatabase.driver(
-            Config.NEO4J_URI,
+            neo4j_uri,
             auth=(Config.NEO4J_USERNAME, Config.NEO4J_PASSWORD)
         )
     except Exception as e:
@@ -116,7 +121,13 @@ def migrate_to_neo4j():
             # Index văn bản thông thường
             session.run("CREATE TEXT INDEX entity_name_idx IF NOT EXISTS FOR (n:Entity) ON (n.name)")
             
-            # Index vector cho Neo4j (kích thước 384 tương ứng mô hình)
+            # Xóa index cũ nếu tồn tại để tránh xung đột kích thước (dimensions)
+            try:
+                session.run("DROP INDEX entity_embedding_idx IF EXISTS")
+            except Exception as e:
+                logger.info(f"Không thể xóa index cũ (có thể chưa tồn tại): {e}")
+
+            # Index vector cho Neo4j với kích thước 768 tương ứng mô hình
             session.run("""
             CREATE VECTOR INDEX entity_embedding_idx IF NOT EXISTS
             FOR (n:Entity) ON (n.embedding)
