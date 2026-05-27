@@ -64,12 +64,15 @@ Buộc nộp lại số lợi bất hợp pháp (Khoản 4 Điều 81).
 """
 
 RAG_PROMPT_TEMPLATE = """Dưới đây là tài liệu tham khảo (Context) lấy từ cơ sở dữ liệu pháp luật.
-⚠️ BẠN CHỈ ĐƯỢC TRÍCH DẪN CÁC ĐIỀU/KHOẢN CÓ TRONG CONTEXT NÀY. KHÔNG ĐƯỢC TỰ THÊM.
+⚠️ BẠN CHỈ ĐƯỢC TRÍCH DẪN CÁC ĐIỀU/KHOẢN CÓ TRONG PHẦN 1 (Vector DB). KHÔNG ĐƯỢC TỰ THÊM.
 
-### 1. Kết quả tìm kiếm văn bản (Vector DB):
+### 1. Nội dung văn bản pháp luật [NGUỒN TRÍCH DẪN CHÍNH]:
+Đây là nội dung chi tiết của các điều luật. Mọi trích dẫn Điều/Khoản/Điểm PHẢI xuất phát từ đây.
 {rag_context}
 
-### 2. Cấu trúc liên kết (Knowledge Graph):
+### 2. Mối quan hệ pháp lý (Knowledge Graph) [CHỈ DÙNG ĐỂ HIỂU NGỮ CẢNH]:
+Phần này cho biết MỐI LIÊN HỆ giữa các điều luật trong Phần 1 (điều nào thuộc văn bản nào, liên quan đến điều nào).
+Dùng thông tin này để giải thích BỐI CẢNH và MỐI LIÊN KẾT, KHÔNG dùng để trích dẫn nội dung mới ngoài Phần 1.
 {graph_context}
 
 ---
@@ -137,6 +140,35 @@ Hành vi xâm phạm quyền sở hữu trí tuệ bị xử lý hình sự hàn
 
 Câu hỏi gốc: {query}
 """
+
+ENTITY_EXTRACTION_STRUCTURED_PROMPT = """Bạn là chuyên gia trích xuất thực thể pháp lý (NER) cho lĩnh vực luật CNTT Việt Nam.
+
+Đọc câu hỏi và trích xuất các thực thể quan trọng, phân loại theo các type sau:
+- LUẬT: Tên văn bản pháp luật (vd: "Luật An ninh mạng", "Nghị định 15/2020")
+- ĐIỀU: Số điều/khoản (vd: "Điều 8", "Khoản 2")
+- HÀNH_VI: Hành vi pháp lý (vd: "phát tán mã độc", "thu thập dữ liệu cá nhân")
+- CHẾ_TÀI: Hình thức xử lý (vd: "phạt tiền", "tịch thu", "đình chỉ hoạt động")
+- CHỦ_THỂ: Đối tượng (vd: "doanh nghiệp", "cá nhân", "tổ chức nước ngoài")
+- KHÁI_NIỆM: Khái niệm pháp lý (vd: "dữ liệu cá nhân", "an ninh mạng", "thương mại điện tử")
+
+Quy tắc:
+1. Mở rộng viết tắt khi trích xuất (SHTT→sở hữu trí tuệ, CNTT→công nghệ thông tin, ANM→an ninh mạng, GDDT→giao dịch điện tử).
+2. Mỗi entity là một cụm danh từ có nghĩa (≥ 2 từ ưu tiên hơn 1 từ đơn).
+3. Trả về JSON HỢP LỆ duy nhất, không markdown, không giải thích.
+
+Format output bắt buộc:
+{{"entities": [{{"text": "...", "type": "..."}}, ...]}}
+
+Ví dụ:
+Câu hỏi: "Phát tán mã độc tống tiền doanh nghiệp bị phạt bao nhiêu theo Luật An ninh mạng?"
+Output: {{"entities": [{{"text": "phát tán mã độc", "type": "HÀNH_VI"}}, {{"text": "tống tiền doanh nghiệp", "type": "HÀNH_VI"}}, {{"text": "doanh nghiệp", "type": "CHỦ_THỂ"}}, {{"text": "phạt tiền", "type": "CHẾ_TÀI"}}, {{"text": "Luật An ninh mạng", "type": "LUẬT"}}, {{"text": "an ninh mạng", "type": "KHÁI_NIỆM"}}]}}
+
+Câu hỏi: "Quyền SHTT của tác giả phần mềm được bảo vệ theo điều khoản nào?"
+Output: {{"entities": [{{"text": "quyền sở hữu trí tuệ", "type": "KHÁI_NIỆM"}}, {{"text": "tác giả phần mềm", "type": "CHỦ_THỂ"}}, {{"text": "bảo vệ sở hữu trí tuệ", "type": "HÀNH_VI"}}, {{"text": "phần mềm máy tính", "type": "KHÁI_NIỆM"}}]}}
+
+Câu hỏi: {query}
+Output:"""
+
 
 QUERY_REWRITE_PROMPT = """Dựa vào lịch sử cuộc trò chuyện (nếu có) và câu hỏi mới nhất của người dùng, hãy viết lại câu hỏi mới nhất thành một câu hỏi độc lập, rõ ràng và đầy đủ ngữ cảnh nhất để phục vụ cho hệ thống tìm kiếm (RAG).
 

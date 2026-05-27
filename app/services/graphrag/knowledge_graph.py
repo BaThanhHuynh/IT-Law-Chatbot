@@ -134,28 +134,53 @@ class KnowledgeGraph:
     def get_graph_context(self, entity_ids: list, depth: int = 1) -> str:
         """
         Build context string from graph traversal starting from given entities.
+        Only includes relationship types meaningful for legal reasoning.
+        Format is optimized for LLM consumption.
         """
         if not entity_ids:
             return ""
 
-        # Query up to 2 hops from the starting entities
-        # Note: Cypher paths length can be dynamic but for simple RAG, depth 1-2 is enough.
+        # Only traverse meaningful legal relationship types
+        USEFUL_REL_TYPES = {
+            "THUOC", "LIEN_QUAN", "AP_DUNG", "THAM_CHIEU", "QUY_DINH", "XU_PHAT", "CAM",
+            "DINH_NGHIA", "NGHIEM_CAM", "THUOC_CHUONG", "THUOC_DIEU", "THUOC_VAN_BAN"
+        }
+
         cypher = f"""
         MATCH (start:Entity)-[r*1..{depth}]-(target:Entity)
         WHERE start.entity_id IN $entity_ids
+          AND type(r[-1]) IN $rel_types
         RETURN start.name AS start_name, 
                [l IN labels(start) WHERE l <> 'Entity'][0] AS start_type,
                start.description AS start_desc,
                target.name AS target_name, 
                [l IN labels(target) WHERE l <> 'Entity'][0] AS target_type,
                type(r[-1]) AS rel_type
-        LIMIT 50
+        LIMIT 40
         """
         
-        results = self.graph.query(cypher, params={"entity_ids": entity_ids})
+        try:
+            results = self.graph.query(cypher, params={
+                "entity_ids": entity_ids,
+                "rel_types": list(USEFUL_REL_TYPES)
+            })
+        except Exception:
+            # Fallback without rel_types filter if Neo4j version doesn't support IN for rel types
+            cypher_fallback = f"""
+            MATCH (start:Entity)-[r*1..{depth}]-(target:Entity)
+            WHERE start.entity_id IN $entity_ids
+            RETURN start.name AS start_name, 
+                   [l IN labels(start) WHERE l <> 'Entity'][0] AS start_type,
+                   start.description AS start_desc,
+                   target.name AS target_name, 
+                   [l IN labels(target) WHERE l <> 'Entity'][0] AS target_type,
+                   type(r[-1]) AS rel_type
+            LIMIT 40
+            """
+            results = self.graph.query(cypher_fallback, params={"entity_ids": entity_ids})
         
         if not results:
-            # Maybe just fetch the nodes themselves if no relationships
+            # Fallback: just fetch the nodes themselves if no relationships found
             cypher_nodes = """
             MATCH (n:Entity) WHERE n.entity_id IN $entity_ids
             RETURN n.name AS name, [l IN labels(n) WHERE l <> 'Entity'][0] AS type, n.description AS desc
@@ -163,28 +188,54 @@ class KnowledgeGraph:
             nodes = self.graph.query(cypher_nodes, params={"entity_ids": entity_ids})
             context = ""
             for n in nodes:
-                context += f"[Entity: {n.get('name')}] (Loại: {n.get('type')})\n  {n.get('desc', '')[:200]}\n"
+                context += f"🔗 [{n.get('type', 'Entity')}] {n.get('name')}\n   {n.get('desc', '')[:200]}\n"
             return context
 
-        context_parts = []
-        seen_starts = set()
-        seen_edges = set()
+        # Build structured relationship map — group by start entity
+        entity_rels: dict = {}   # start_name -> list of (rel_type, target_name, target_type)
+        entity_desc: dict = {}   # start_name -> (start_type, start_desc)
 
         for r in results:
             start_name = r["start_name"]
-            if start_name not in seen_starts:
-                seen_starts.add(start_name)
-                context_parts.append(
-                    f"[Entity: {start_name}] (Loại: {r['start_type']})\n"
-                    f"  {r.get('start_desc', '')[:200]}"
-                )
-            
-            edge_key = f"{start_name}-{r['rel_type']}-{r['target_name']}"
-            if edge_key not in seen_edges:
-                seen_edges.add(edge_key)
-                context_parts.append(
-                    f"  → [{r['rel_type']}] {r['target_name']} (Loại: {r['target_type']})"
-                )
+            rel_type = r["rel_type"]
+            # Skip uninformative relationship types
+            if rel_type not in USEFUL_REL_TYPES:
+                continue
+            if start_name not in entity_rels:
+                entity_rels[start_name] = []
+                entity_desc[start_name] = (r.get("start_type", ""), r.get("start_desc", ""))
+            edge_key = f"{rel_type}-{r['target_name']}"
+            if edge_key not in [f"{rr[0]}-{rr[1]}" for rr in entity_rels[start_name]]:
+                entity_rels[start_name].append((rel_type, r["target_name"], r.get("target_type", "")))
+
+        if not entity_rels:
+            return ""
+
+        # Format for LLM: clear, hierarchical, role-labeled
+        rel_label = {
+            "THUOC": "thuộc",
+            "LIEN_QUAN": "liên quan đến",
+            "AP_DUNG": "áp dụng cho",
+            "THAM_CHIEU": "tham chiếu đến",
+            "QUY_DINH": "quy định về",
+            "XU_PHAT": "xử phạt hành vi",
+            "CAM": "cấm hành vi",
+            "DINH_NGHIA": "định nghĩa",
+            "NGHIEM_CAM": "nghiêm cấm hành vi",
+            "THUOC_CHUONG": "thuộc chương",
+            "THUOC_DIEU": "thuộc điều",
+            "THUOC_VAN_BAN": "thuộc văn bản",
+        }
+
+        context_parts = ["=== Mối quan hệ pháp lý (Knowledge Graph) ==="]
+        for start_name, rels in entity_rels.items():
+            start_type, start_desc = entity_desc[start_name]
+            context_parts.append(f"\n🔗 {start_name} [{start_type}]")
+            if start_desc:
+                context_parts.append(f"   Mô tả: {start_desc[:150]}")
+            for rel_type, target_name, target_type in rels:
+                verb = rel_label.get(rel_type, rel_type)
+                context_parts.append(f"   → {verb}: {target_name} [{target_type}]")
 
         return "\n".join(context_parts)
 
@@ -253,27 +304,72 @@ def _build_entity_id(so_hieu: str, dieu_so: str) -> str:
     """
     if not so_hieu or not dieu_so:
         return ""
-    sanitized = re.sub(r'[/\-\s]', '_', so_hieu.strip())
+    # In Neo4j, hyphens '-' are preserved in entity IDs (e.g. NĐ-CP). Replace only '/' and spaces.
+    sanitized = re.sub(r'[/\s]', '_', so_hieu.strip())
     return f"dieu_{sanitized}_{dieu_so}"
 
 
-def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", top_extra: int = 3) -> list:
+# Minimum similarity score for graph-expanded chunks to be injected into RAG context.
+# Chunks below this threshold are dropped to avoid diluting the LLM context.
+MIN_GRAPH_INJECT_SCORE = 0.28
+
+
+def _score_graph_chunks(query_embedding, candidates: list) -> list:
+    """
+    Score graph-candidate chunks by cosine similarity with the query embedding.
+    Returns only chunks with similarity >= MIN_GRAPH_INJECT_SCORE, sorted desc.
+
+    Args:
+        query_embedding: Pre-computed query embedding (np.ndarray)
+        candidates: List of chunk dicts (from Qdrant scroll)
+    Returns:
+        Filtered and scored list of chunk dicts with 'score' set to real similarity
+    """
+    from app.services.rag.embeddings import get_embedding, cosine_similarity
+
+    scored = []
+    for chunk in candidates:
+        content = chunk.get("content", "")
+        if not content:
+            continue
+        try:
+            # Use at most 500 chars for scoring to keep it fast
+            chunk_emb = get_embedding(content[:500])
+            sim = cosine_similarity(query_embedding, chunk_emb)
+            if sim >= MIN_GRAPH_INJECT_SCORE:
+                chunk["score"] = round(sim, 3)
+                scored.append(chunk)
+        except Exception as e:
+            logger.warning(f"[GraphExpand] Scoring failed for chunk: {e}")
+            continue
+
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored
+
+
+def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str = "", top_extra: int = 2) -> list:
     """
     Graph Re-ranking: sau khi RAG tìm được chunks, duyệt đồ thị để tìm các điều luật
     liên quan (tham chiếu, liên kết) và bổ sung vào kết quả.
-    
+
+    KEY IMPROVEMENT: Trước khi inject, tính cosine similarity giữa query và chunk.
+    Chỉ inject khi similarity >= MIN_GRAPH_INJECT_SCORE để tránh pha loãng context.
+    Gán score thực (không hardcode 0.0) để hệ thống phân biệt được độ liên quan.
+
     Chiến lược 2 lớp:
     Lớp 1 (Direct): Duyệt trực tiếp 1-2 hop từ entity_id của các điều đã tìm được
     Lớp 2 (Concept Bridge): Tìm các điều từ LUẬT KHÁC cùng AP_DUNG cho 1 khái niệm
            VD: Điều 7 ATTTM --AP_DUNG--> "phần mềm độc hại" <--AP_DUNG-- Điều 83 NĐ15
     """
     from app.services.rag.retriever import get_qdrant_client
+    from app.services.rag.embeddings import get_embedding
     from qdrant_client.models import Filter, FieldCondition, MatchAny
 
     # ── Bước 1: Xây dựng entity_id ĐÚNG FORMAT từ RAG results ────────
+    # Chỉ dùng top-3 vector results để tránh quá nhiều hướng expand
     article_entity_ids = []
     source_so_hieus = set()  # Track which laws we already have
-    for vr in vector_results[:5]:
+    for vr in vector_results[:3]:
         dieu_so = vr.get("dieu_so", "")
         so_hieu = vr.get("so_hieu", "")
         if dieu_so and so_hieu:
@@ -286,7 +382,15 @@ def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", top_extra: int
         logger.info(f"[GraphExpand] No valid entity_ids from RAG results, skipping")
         return vector_results
 
-    logger.info(f"[GraphExpand] Built entity_ids from RAG: {article_entity_ids[:5]}")
+    logger.info(f"[GraphExpand] Built entity_ids from RAG top-3: {article_entity_ids}")
+
+    # Pre-compute query embedding once for scoring all candidates
+    query_embedding = None
+    if query:
+        try:
+            query_embedding = get_embedding(query)
+        except Exception as e:
+            logger.warning(f"[GraphExpand] Failed to embed query for scoring: {e}")
 
     # ── Bước 2: Lớp 1 — Duyệt trực tiếp (THUOC, LIEN_QUAN...) ──────
     related_entity_ids = []
@@ -350,7 +454,7 @@ def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", top_extra: int
     if not related_dieu_so:
         return vector_results
 
-    # ── Bước 5: Truy vấn Qdrant lấy nội dung các điều liên quan ──────
+    # ── Bước 5: Truy vấn Qdrant lấy candidates từ graph ──────────────
     try:
         qdrant = get_qdrant_client()
         existing_keys = {(r.get("doc_title", ""), r.get("dieu_so", "")) for r in vector_results}
@@ -365,25 +469,26 @@ def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", top_extra: int
                     )
                 ]
             ),
-            limit=top_extra * 3,
+            limit=top_extra * 5,   # Fetch more candidates for scoring
             with_payload=True,
         )
 
-        added = 0
+        # Build candidate list first
+        candidates = []
         for point in qdrant_results:
             p = point.payload
             key = (p.get("ten_van_ban", ""), p.get("dieu_so", ""))
             if key in existing_keys:
                 continue
-            existing_keys.add(key)
 
             article_str = f"Điều {p.get('dieu_so', '')}"
             if p.get("dieu_ten"):
                 article_str += f". {p['dieu_ten']}"
 
-            vector_results.append({
+            content = p.get("full_dieu_text") or p.get("noi_dung_chunk") or p.get("content", "")
+            candidates.append({
                 "chunk_id": p.get("chunk_id"),
-                "content": p.get("full_dieu_text") or p.get("noi_dung_chunk") or p.get("content", ""),
+                "content": content,
                 "context_text": p.get("context_text", ""),
                 "dieu_so": p.get("dieu_so", ""),
                 "dieu_ten": p.get("dieu_ten", ""),
@@ -393,11 +498,35 @@ def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", top_extra: int
                 "score": 0.0,
                 "_source": "graph_expand",
             })
-            added += 1
+
+        # ── Bước 6 (MỚI): Lọc relevance bằng cosine similarity ────────
+        # Chỉ inject chunk có đủ độ liên quan với query
+        if query_embedding is not None and candidates:
+            scored_candidates = _score_graph_chunks(query_embedding, candidates)
+            logger.info(
+                f"[GraphExpand] Relevance filter: {len(candidates)} candidates → "
+                f"{len(scored_candidates)} passed (threshold={MIN_GRAPH_INJECT_SCORE})"
+            )
+        else:
+            # No query embedding available — skip scoring, take all (safe fallback)
+            scored_candidates = candidates
+            logger.warning("[GraphExpand] No query embedding for scoring — using unfiltered candidates")
+
+        added = 0
+        for chunk in scored_candidates:
+            key = (chunk.get("doc_title", ""), chunk.get("dieu_so", ""))
+            if key not in existing_keys:
+                existing_keys.add(key)
+                vector_results.append(chunk)
+                added += 1
+                logger.info(
+                    f"[GraphExpand] ✅ Injected: {chunk['doc_title']} Điều {chunk['dieu_so']} "
+                    f"(score={chunk['score']:.3f})"
+                )
             if added >= top_extra:
                 break
 
-        logger.info(f"[GraphExpand] Injected {added} extra articles from graph into RAG context")
+        logger.info(f"[GraphExpand] Final: injected {added} relevant articles from graph")
     except Exception as e:
         logger.warning(f"[GraphExpand] Qdrant fetch for related articles failed: {e}")
 
@@ -445,13 +574,21 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
     
     vector_results = multi_query_search(all_queries, top_k=top_k)
 
+    # NOTE: Không hardcode fallback inject điều luật cụ thể ở đây.
+    # Việc tìm đúng điều luật được đảm bảo qua 3 lớp:
+    #   1. LLM-generated sub_queries (đa dạng ngữ nghĩa)
+    #   2. Static queries trong query_expansion.py (trỏ đúng Điều/Khoản theo chủ đề)
+    #   3. _expand_via_graph() bên dưới (bổ sung điều luật liên quan từ graph)
+
     # ── 1.5. Graph Re-ranking ─────────────────────────────────────────
+
     # Sau khi RAG tìm được top-k, duyệt đồ thị để bổ sung các điều luật
     # có liên hệ (tham chiếu, liên kết) mà vector search có thể bỏ sót.
     # VD: RAG tìm được "Điều 7 cấm hành vi" → Graph kéo thêm "Điều 84 mức phạt"
+    # KEY: Truyền query để tính cosine similarity — chỉ inject chunk thực sự liên quan
     kg = get_knowledge_graph()
     try:
-        vector_results = _expand_via_graph(vector_results, kg, top_extra=3)
+        vector_results = _expand_via_graph(vector_results, kg, query=query, top_extra=2)
     except Exception as e:
         logger.warning(f"[GraphExpand] Skipped due to error: {e}")
 
@@ -466,15 +603,14 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
     # ── 3. Expand Graph Context ───────────────────────────────────────
     matched_entity_ids = [r["entity"]["entity_id"] for r in kg_results]
 
-    # Also bridge vector results → graph entities (by article number)
+    # Also bridge vector results → graph entities (using exact entity_id)
     for vr in vector_results[:3]:
-        article = vr.get("article", "")
-        if article:
-            art_match = re.search(r'(\d+)', article)
-            if art_match:
-                article_entity_id = f"dieu_{art_match.group(1)}"
-                if article_entity_id not in matched_entity_ids:
-                    matched_entity_ids.append(article_entity_id)
+        so_hieu = vr.get("so_hieu", "")
+        dieu_so = vr.get("dieu_so", "")
+        if so_hieu and dieu_so:
+            article_entity_id = _build_entity_id(so_hieu, dieu_so)
+            if article_entity_id and article_entity_id not in matched_entity_ids:
+                matched_entity_ids.append(article_entity_id)
 
     try:
         if matched_entity_ids:

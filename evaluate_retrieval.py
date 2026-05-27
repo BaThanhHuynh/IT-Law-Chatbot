@@ -35,6 +35,10 @@ import numpy as np
 
 from app.services.rag.retriever import vector_search
 from app.services.graphrag.knowledge_graph import get_knowledge_graph, hybrid_search
+from app.services.graphrag.entity_retrieval import (
+    entity_centric_retrieval,
+    hybrid_entity_retrieval,
+)
 from app.services.rag.embeddings import get_embedding
 from app.core.logger import logger
 from app.core.config import Config
@@ -97,16 +101,23 @@ def kg_vector_search(query: str, top_k: int) -> list:
     """
     Pure vector search trên KG entities — dùng embedding đã lưu.
     Trả về [{entity, score}] sắp xếp theo cosine similarity giảm dần.
+
+    Share cache với entity_retrieval._load_kg_entity_index() để chỉ load 1 lần.
     """
-    entities, mat = _load_all_kg_entities()
+    # Dùng chung cache với module entity_retrieval (tránh load 2 lần)
+    from app.services.graphrag import entity_retrieval as _er
+    entities, mat = _er._load_kg_entity_index()
     if not entities:
         return []
 
     q_emb = get_embedding(query)
     q_emb = q_emb / (np.linalg.norm(q_emb) + 1e-8)
 
-    scores = mat @ q_emb  # cosine vì đã normalize cả 2 phía
-    top_idx = np.argpartition(-scores, min(top_k, len(scores) - 1))[:top_k]
+    scores = mat @ q_emb
+    k = min(top_k, len(scores))
+    if k <= 0:
+        return []
+    top_idx = np.argpartition(-scores, k - 1)[:k]
     top_idx = top_idx[np.argsort(-scores[top_idx])]
 
     return [
@@ -377,6 +388,76 @@ def evaluate_hybrid(query: str, gold: str, top_k: int) -> dict:
 
 
 # ────────────────────────────────────────────────────────────────────────────
+#  PHƯƠNG PHÁP MỚI: ENTITY-CENTRIC (thay cho query expansion)
+# ────────────────────────────────────────────────────────────────────────────
+def evaluate_entity_centric(query: str, gold: str, top_k: int) -> dict:
+    """
+    Entity-centric: LLM extract entities → mỗi entity match KG node →
+    aggregate score → rank top_k nodes.
+
+    KHÔNG dùng query expansion / abbreviation rules / static queries.
+    """
+    try:
+        result = entity_centric_retrieval(query, top_k=top_k)
+    except Exception as e:
+        logger.error(f"[EntityCentric] Failed: {e}")
+        return {"hit": False, "rank": -1, "n_results": 0, "n_entities": 0}
+
+    nodes = result.get("ranked_nodes", [])
+    n_entities = len(result.get("matched_entities", []))
+
+    gold_tokens, gold_dieu = _parse_gold_label(gold)
+
+    rank = -1
+    for i, node in enumerate(nodes[:top_k]):
+        entity = node.get("entity", {}) or {}
+        if _entity_matches_gold(entity, gold_tokens, gold_dieu):
+            rank = i + 1
+            break
+
+    return {
+        "hit": rank > 0,
+        "rank": rank,
+        "n_results": len(nodes),
+        "n_entities": n_entities,
+    }
+
+
+def evaluate_hybrid_3way(query: str, gold: str, top_k: int) -> dict:
+    """
+    Hybrid 3-way: Entity-centric + Query-embed + Chunk-RAG, fuse bằng RRF.
+    """
+    try:
+        result = hybrid_entity_retrieval(query, top_k=top_k)
+    except Exception as e:
+        logger.error(f"[Hybrid3Way] Failed: {e}")
+        return {"hit": False, "rank": -1, "n_results": 0}
+
+    ranked = result.get("ranked_results", [])
+    gold_tokens, gold_dieu = _parse_gold_label(gold)
+
+    rank = -1
+    for i, item in enumerate(ranked[:top_k]):
+        if item.get("type") == "chunk":
+            chunk = item.get("chunk", {})
+            pred = to_label_format(chunk.get("doc_title", ""), str(chunk.get("dieu_so", "")))
+            if labels_match(pred, gold):
+                rank = i + 1
+                break
+        else:  # kg_node
+            entity = item.get("entity", {}) or {}
+            if _entity_matches_gold(entity, gold_tokens, gold_dieu):
+                rank = i + 1
+                break
+
+    return {
+        "hit": rank > 0,
+        "rank": rank,
+        "n_results": len(ranked),
+    }
+
+
+# ────────────────────────────────────────────────────────────────────────────
 #  METRICS
 # ────────────────────────────────────────────────────────────────────────────
 def compute_metrics(results: list) -> dict:
@@ -432,6 +513,11 @@ def main():
         help="Bỏ qua KG only và Hybrid (chỉ chạy RAG only) — dùng khi Neo4j không khả dụng",
     )
     parser.add_argument(
+        "--skip-entity",
+        action="store_true",
+        help="Bỏ qua Entity-Centric và Hybrid-3way (tránh tốn LLM quota khi test nhanh)",
+    )
+    parser.add_argument(
         "--neo4j-uri",
         type=str,
         default=None,
@@ -483,8 +569,11 @@ def main():
     print("=" * 88)
 
     rag_results, kg_results, hybrid_results = [], [], []
+    entity_results, hybrid3_results = [], []
     detailed = []
     t0 = time.time()
+
+    run_entity = not args.skip_entity
 
     for i, row in enumerate(test_data, 1):
         q = row["query"]
@@ -498,9 +587,19 @@ def main():
             r_kg = evaluate_kg_only(q, gold, args.top_k)
             r_hyb = evaluate_hybrid(q, gold, args.top_k)
 
+        # 2 phương pháp mới — yêu cầu Neo4j + tốn LLM call
+        if run_entity and not args.skip_kg:
+            r_ent = evaluate_entity_centric(q, gold, args.top_k)
+            r_h3 = evaluate_hybrid_3way(q, gold, args.top_k)
+        else:
+            r_ent = {"hit": False, "rank": -1, "n_results": 0, "n_entities": 0}
+            r_h3 = {"hit": False, "rank": -1, "n_results": 0}
+
         rag_results.append(r_rag)
         kg_results.append(r_kg)
         hybrid_results.append(r_hyb)
+        entity_results.append(r_ent)
+        hybrid3_results.append(r_h3)
 
         detailed.append(
             {
@@ -510,8 +609,9 @@ def main():
                 "rag_rank": r_rag["rank"],
                 "kg_rank": r_kg["rank"],
                 "hybrid_rank": r_hyb["rank"],
-                "hybrid_vector_rank": r_hyb.get("vector_rank", -1),
-                "hybrid_kg_rank": r_hyb.get("kg_rank", -1),
+                "entity_centric_rank": r_ent["rank"],
+                "hybrid3way_rank": r_h3["rank"],
+                "n_entities_extracted": r_ent.get("n_entities", 0),
             }
         )
 
@@ -522,8 +622,10 @@ def main():
             print(
                 f"[{i:4d}/{n}] "
                 f"RAG={sum(1 for r in rag_results if r['hit']):3d} | "
-                f"KG ={sum(1 for r in kg_results if r['hit']):3d} | "
+                f"KG={sum(1 for r in kg_results if r['hit']):3d} | "
                 f"HYB={sum(1 for r in hybrid_results if r['hit']):3d} | "
+                f"ENT={sum(1 for r in entity_results if r['hit']):3d} | "
+                f"H3={sum(1 for r in hybrid3_results if r['hit']):3d} | "
                 f"{rate:.2f} q/s | ETA {eta:.0f}s"
             )
 
@@ -535,6 +637,9 @@ def main():
         "KG only": compute_metrics(kg_results),
         "Hybrid (RAG+KG)": compute_metrics(hybrid_results),
     }
+    if run_entity and not args.skip_kg:
+        metrics["Entity-Centric"] = compute_metrics(entity_results)
+        metrics["Hybrid 3-way"] = compute_metrics(hybrid3_results)
 
     print("\n" + "=" * 88)
     print(f"  RESULTS  (elapsed: {elapsed:.1f}s, {n} samples, top_k={args.top_k})")
@@ -578,8 +683,9 @@ def main():
                 "rag_rank",
                 "kg_rank",
                 "hybrid_rank",
-                "hybrid_vector_rank",
-                "hybrid_kg_rank",
+                "entity_centric_rank",
+                "hybrid3way_rank",
+                "n_entities_extracted",
             ],
         )
         writer.writeheader()

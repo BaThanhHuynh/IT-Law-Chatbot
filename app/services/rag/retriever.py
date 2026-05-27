@@ -4,6 +4,8 @@ from qdrant_client import QdrantClient
 from app.services.rag.embeddings import get_embedding
 from app.core.config import Config
 from app.core.logger import logger
+from app.services.rag.bm25 import get_bm25_service
+from app.services.rag.reranker import get_reranker_service
 
 _client = None
 
@@ -57,32 +59,81 @@ def _single_query_search(query: str, top_k: int) -> list:
 
 def multi_query_search(queries: list, top_k: int = None) -> list:
     """
-    Multi-query retrieval: run all queries in parallel via ThreadPoolExecutor,
-    merge and deduplicate results by chunk_id keeping the highest score.
-
-    Args:
-        queries: List of query strings (original + LLM-generated variants)
-        top_k: Max results PER query (final result may be larger before truncation)
-
-    Returns:
-        Merged, deduplicated, and sorted list of search results
+    Hybrid Multi-Query search with BM25 and Cross-Encoder Reranker.
+    - Retrieving candidate chunks from Vector DB (parallel search).
+    - Retrieving candidate chunks from BM25.
+    - Merging both candidate pools and deduplicating.
+    - Reranking using BAAI/bge-reranker-v2-m3 against queries[0].
     """
     top_k = top_k or Config.TOP_K_RESULTS
-    merged: dict = {}
-
+    
+    # 1. Vector Retrieval (Dense)
+    vector_candidates: dict = {}
     max_workers = min(len(queries), 8)
+    # Fetch slightly more candidates from vector to allow good re-ranking diversity
+    vector_limit = max(top_k * 4, 20) 
+    
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_query = {executor.submit(_single_query_search, q, top_k): q for q in queries}
+        future_to_query = {}
+        for idx, q in enumerate(queries):
+            limit = max(top_k * 4, 20) if idx == 0 else max(top_k, 5)
+            future_to_query[executor.submit(_single_query_search, q, limit)] = q
+            
         for future in as_completed(future_to_query):
             results = future.result()
             for r in results:
                 dedup_key = r.get("chunk_id") or f"{r.get('doc_title')}_{r.get('dieu_so')}"
-                if dedup_key not in merged or r["score"] > merged[dedup_key]["score"]:
-                    merged[dedup_key] = r
+                if dedup_key not in vector_candidates or r["score"] > vector_candidates[dedup_key]["score"]:
+                    r["_source"] = "vector"
+                    vector_candidates[dedup_key] = r
 
-    all_results = sorted(merged.values(), key=lambda x: x["score"], reverse=True)
-    logger.info(f"[MultiQuery] {len(queries)} parallel queries → {len(all_results)} unique chunks")
-    return all_results[:top_k + 3]
+    logger.info(f"[HybridSearch] Vector search retrieved {len(vector_candidates)} unique candidate chunks.")
+
+    # 2. BM25 Retrieval (Sparse)
+    bm25_candidates = []
+    primary_query = queries[0] if queries else ""
+    if primary_query:
+        try:
+            bm25_service = get_bm25_service()
+            # Fetch slightly more candidates from BM25 for re-ranking diversity
+            bm25_limit = max(top_k * 4, 20)
+            bm25_candidates = bm25_service.search(primary_query, top_k=bm25_limit)
+            logger.info(f"[HybridSearch] BM25 retrieved {len(bm25_candidates)} unique candidate chunks.")
+        except Exception as e:
+            logger.error(f"[HybridSearch Error] BM25 search failed: {e}")
+
+    # 3. Merge Vector and BM25 candidates
+    merged_candidates: dict = {}
+    
+    # Add vector candidates first
+    for key, val in vector_candidates.items():
+        merged_candidates[key] = val
+        
+    # Add BM25 candidates (deduplicate)
+    for r in bm25_candidates:
+        dedup_key = r.get("chunk_id") or f"{r.get('doc_title')}_{r.get('dieu_so')}"
+        if dedup_key not in merged_candidates:
+            merged_candidates[dedup_key] = r
+        else:
+            merged_candidates[dedup_key]["_source"] = "hybrid"
+
+    candidate_list = list(merged_candidates.values())
+    logger.info(f"[HybridSearch] Merged candidate pool size: {len(candidate_list)} chunks.")
+
+    # 4. Rerank candidates using Cross-Encoder Reranker
+    if primary_query and candidate_list:
+        try:
+            reranker = get_reranker_service()
+            rerank_limit = top_k + 3
+            reranked_results = reranker.rerank(primary_query, candidate_list, top_k=rerank_limit)
+            logger.info(f"[HybridSearch] Reranking completed. Returned top {len(reranked_results)} chunks.")
+            return reranked_results
+        except Exception as e:
+            logger.error(f"[HybridSearch Error] Reranking failed, falling back: {e}")
+            # Fallback to vector candidates sorted by original score
+            return sorted(vector_candidates.values(), key=lambda x: x["score"], reverse=True)[:top_k + 3]
+            
+    return sorted(vector_candidates.values(), key=lambda x: x["score"], reverse=True)[:top_k + 3]
 
 
 def _parse_qdrant_results(search_result) -> list:
@@ -110,24 +161,73 @@ def _parse_qdrant_results(search_result) -> list:
             "loai_van_ban": p.get("loai_van_ban", ""),
             "trang_thai": p.get("trang_thai", ""),
             "nhom": p.get("nhom", ""),
-            "score": float(hit.score),
+            "score": float(hit.score) if hasattr(hit, "score") and hit.score is not None else 0.0,
         })
             
     return results
 
 
 def get_context_from_results(results: list) -> str:
-    """Format search results into context string for LLM."""
+    """
+    Format search results into context string for LLM.
+
+    Two-tier layout:
+    - Tier 1: Chunks from vector search (higher confidence) — labeled as primary sources
+    - Tier 2: Chunks from graph expansion (supplementary) — labeled separately
+    This helps the LLM understand which sources to prioritize for citations.
+    """
     if not results:
         return "Không tìm thấy thông tin liên quan."
 
+    # Split by source: vector search results vs graph-expanded results
+    vector_chunks = [r for r in results if r.get("_source") != "graph_expand"]
+    graph_chunks  = [r for r in results if r.get("_source") == "graph_expand"]
+
     context_parts = []
-    for i, r in enumerate(results, 1):
+
+    # Tier 1: Vector search results (primary, citation-worthy)
+    for i, r in enumerate(vector_chunks, 1):
         source_info = f"[{r.get('doc_title', 'N/A')} ({r.get('so_hieu', '')})"
         if r.get('article'):
             source_info += f" - {r['article']}"
         source_info += f"] (Độ liên quan: {r['score']:.2f})"
-
         context_parts.append(f"--- Đoạn {i} {source_info} ---\n{r['content']}")
 
+    # Tier 2: Graph-expanded results (supplementary context)
+    if graph_chunks:
+        context_parts.append("\n--- [Bổ sung từ Knowledge Graph — dùng để hiểu bối cảnh, KHÔNG trích dẫn thêm] ---")
+        for r in graph_chunks:
+            source_info = f"[{r.get('doc_title', 'N/A')} ({r.get('so_hieu', '')})"
+            if r.get('article'):
+                source_info += f" - {r['article']}"
+            source_info += f"] (Độ liên quan KG: {r['score']:.2f})"
+            context_parts.append(f"{source_info}\n{r['content']}")
+
     return "\n\n".join(context_parts)
+
+
+def fetch_specific_article(doc_title: str, dieu_so: str) -> list:
+    """
+    Fetch a specific article from Qdrant by document title and article number.
+    Used as fallback for critical articles that vector search might miss.
+    """
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+    client = get_qdrant_client()
+    try:
+        response, _ = client.scroll(
+            collection_name=Config.QDRANT_COLLECTION,
+            scroll_filter=Filter(
+                must=[
+                    FieldCondition(key="dieu_so", match=MatchValue(value=dieu_so)),
+                    FieldCondition(key="ten_van_ban", match=MatchValue(value=doc_title))
+                ]
+            ),
+            limit=5,
+            with_payload=True
+        )
+        if response:
+            return _parse_qdrant_results(response)
+        return []
+    except Exception as e:
+        logger.error(f"[Error] Fetch specific article failed: {e}")
+        return []

@@ -55,7 +55,7 @@ def classify_intent(query: str) -> str:
         model = get_llm()
         prompt = INTENT_CLASSIFICATION_PROMPT.format(query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite-preview",
+            model="gemini-3.1-flash-lite",
             contents=prompt
         )
         intent = response.text.strip().upper()
@@ -74,7 +74,7 @@ def rewrite_query(query: str, history_context: str) -> str:
         model = get_llm()
         prompt = QUERY_REWRITE_PROMPT.format(history_context=history_context, query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite-preview",
+            model="gemini-3.1-flash-lite",
             contents=prompt
         )
         rewritten = response.text.strip()
@@ -94,7 +94,7 @@ def generate_title(query: str) -> str:
         model = get_llm()
         prompt = TITLE_PROMPT.format(query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite-preview",
+            model="gemini-3.1-flash-lite",
             contents=prompt
         )
         try:
@@ -114,7 +114,7 @@ def extract_entities(query: str) -> str:
         model = get_llm()
         prompt = ENTITY_EXTRACTION_PROMPT.format(query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite-preview",
+            model="gemini-3.1-flash-lite",
             contents=prompt
         )
         try:
@@ -141,7 +141,7 @@ def generate_sub_queries(query: str, num_queries: int = 3) -> list:
         model = get_llm()
         prompt = MULTI_QUERY_PROMPT.format(query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite-preview",
+            model="gemini-3.1-flash-lite",
             contents=prompt
         )
         
@@ -222,7 +222,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             try:
                 model = get_llm()
                 summary_response = model.models.generate_content(
-                    model="gemini-3.1-flash-lite-preview",
+                    model="gemini-3.1-flash-lite",
                     contents=f"Hãy tóm tắt nội dung sau thành 3-5 ý chính, mỗi ý 1-2 câu ngắn gọn, dùng bullet point:\n\n{last_bot_msg[:3000]}",
                     config=types.GenerateContentConfig(
                         system_instruction=(
@@ -258,16 +258,16 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
 
         chatchit_system = (
             "Bạn là trợ lý tư vấn pháp luật CNTT. "
-            "Khi người dùng chào hỏi hoặc hỏi chuyện thông thường, hãy trả lời THẬT NGẮN GỌN: "
-            "tối đa 2-3 câu, không liệt kê, không đề cập điều khoản luật. "
-            "Chỉ cần xác nhận lời cảm ơn hoặc chào lại thân thiện."
+            "Nếu người dùng chào hỏi mở đầu, hãy chào lại thân thiện và hỏi xem họ cần tư vấn vấn đề pháp lý gì. "
+            "Nếu người dùng cảm ơn hoặc tạm biệt, hãy đáp lại lịch sự. "
+            "Yêu cầu chung: Trả lời THẬT NGẮN GỌN (tối đa 2 câu), không liệt kê, không giải thích dài dòng."
         )
 
         # Gọi LLM trực tiếp (không tạo chat session, không load history đầy đủ)
         try:
             model = get_llm()
             chatchit_response = model.models.generate_content(
-                model="gemini-3.1-flash-lite-preview",
+                model="gemini-3.1-flash-lite",
                 contents=query,
                 config=types.GenerateContentConfig(
                     system_instruction=chatchit_system,
@@ -380,7 +380,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         else:
             model = get_llm()
             chat = model.chats.create(
-                model="gemini-3.1-flash-lite-preview",
+                model="gemini-3.1-flash-lite",
                 history=chat_history,
                 config=types.GenerateContentConfig(
                     system_instruction=system_prompt,
@@ -410,65 +410,73 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
 
     # 6. Build sources list (calibrate raw scores to user-friendly confidence)
     from app.services.rag.embeddings import calibrate_score
-    sources = []
-    
-    # Sources from Vector DB (Qdrant) — diversity-aware selection
-    # Strategy: pick best chunk per unique doc_title (max 1 per document),
-    # then fill remaining slots with next-best unique articles from same docs.
-    # This ensures ALL cited documents appear in Sources, not just top-score repeated.
-    MAX_SOURCES = 4
-    seen_doc_titles = set()   # track which doc_titles already have a source
+    all_candidates = []
     seen_articles = set()     # (doc_title, article) -> avoid exact duplicate articles
 
-    # Pass 1: one best chunk per unique document
+    # Gather all unique articles from vector search results
     for r in search_results.get("vector_results", []):
         doc = r.get("doc_title", "")
         article_key = (doc, r.get("article", ""))
-        if doc not in seen_doc_titles and article_key not in seen_articles:
-            seen_doc_titles.add(doc)
+        if article_key not in seen_articles:
             seen_articles.add(article_key)
-            sources.append({
+            all_candidates.append({
                 "article": r.get("article", ""),
                 "content": r.get("content", "")[:200],
                 "full_content": r.get("content", ""),
                 "score": calibrate_score(r.get("score", 0)),
                 "doc_title": doc,
                 "so_hieu": r.get("so_hieu", ""),
+                "dieu_so": r.get("dieu_so", ""),
             })
-        if len(sources) >= MAX_SOURCES:
-            break
 
-    # Pass 2: fill remaining slots with next-best unique articles (different article number)
-    if len(sources) < MAX_SOURCES:
-        for r in search_results.get("vector_results", []):
-            article_key = (r.get("doc_title", ""), r.get("article", ""))
-            if article_key not in seen_articles:
-                seen_articles.add(article_key)
-                sources.append({
-                    "article": r.get("article", ""),
-                    "content": r.get("content", "")[:200],
-                    "full_content": r.get("content", ""),
-                    "score": calibrate_score(r.get("score", 0)),
-                    "doc_title": r.get("doc_title", ""),
-                    "so_hieu": r.get("so_hieu", ""),
-                })
-            if len(sources) >= MAX_SOURCES:
-                break
-
-    # Sources from Graph DB (Neo4j) — real cosine similarity scores
+    # Gather sources from Graph DB (Neo4j)
     for r in search_results.get("matched_entities", [])[:2]:
         entity = r.get("entity", {})
         real_score = r.get("score", 0)
         # Only include relevant entities (score >= 0.35) of legal types
         if real_score >= 0.35 and entity.get("entity_type") in ["DIEU_LUAT", "VAN_BAN"]:
-            sources.append({
-                "article": entity.get("name", ""),
-                "content": entity.get("description", "")[:200],
-                "full_content": entity.get("description", ""),
-                "score": calibrate_score(real_score),
-                "doc_title": "Mạng Lưới Tri Thức (GraphRAG)",
-                "so_hieu": "",
-            })
+            article_key = ("Mạng Lưới Tri Thức (GraphRAG)", entity.get("name", ""))
+            if article_key not in seen_articles:
+                seen_articles.add(article_key)
+                all_candidates.append({
+                    "article": entity.get("name", ""),
+                    "content": entity.get("description", "")[:200],
+                    "full_content": entity.get("description", ""),
+                    "score": calibrate_score(real_score),
+                    "doc_title": "Mạng Lưới Tri Thức (GraphRAG)",
+                    "so_hieu": "",
+                    "dieu_so": "",
+                })
+
+    # Filter candidates by actual citations in the answer
+    filtered_candidates = _filter_sources_by_citations(answer, all_candidates)
+
+    # Apply diversity-aware top-k selection on filtered candidates
+    MAX_SOURCES = 4
+    sources = []
+    seen_doc_titles = set()
+    seen_articles_final = set()
+
+    # Pass 1: one best chunk per unique document among filtered candidates
+    for s in filtered_candidates:
+        doc = s.get("doc_title", "")
+        article_key = (doc, s.get("article", ""))
+        if doc not in seen_doc_titles and article_key not in seen_articles_final:
+            seen_doc_titles.add(doc)
+            seen_articles_final.add(article_key)
+            sources.append(s)
+        if len(sources) >= MAX_SOURCES:
+            break
+
+    # Pass 2: fill remaining slots with next-best unique articles among filtered candidates
+    if len(sources) < MAX_SOURCES:
+        for s in filtered_candidates:
+            article_key = (s.get("doc_title", ""), s.get("article", ""))
+            if article_key not in seen_articles_final:
+                seen_articles_final.add(article_key)
+                sources.append(s)
+            if len(sources) >= MAX_SOURCES:
+                break
 
     # 7. Save assistant message
     save_message(conversation_id, "assistant", answer, sources)
@@ -479,6 +487,84 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         "sources": sources,
         "graph_data": graph_data,
     }
+
+
+
+def _filter_sources_by_citations(answer: str, sources: list) -> list:
+    """
+    Lọc danh sách nguồn trích dẫn, chỉ giữ lại những nguồn được LLM trích dẫn 
+    hoặc nhắc tới trong văn bản câu trả lời (answer).
+    """
+    import re
+    filtered = []
+    answer_lower = answer.lower()
+    
+    # Chuẩn hóa để nhận diện viết tắt luật phổ biến
+    normalized_answer = answer_lower.replace("anm", "an ninh mạng").replace("attt", "an toàn thông tin").replace("shtt", "sở hữu trí tuệ")
+
+    for s in sources:
+        doc_title = s.get("doc_title", "")
+        article = s.get("article", "")
+        dieu_so = s.get("dieu_so", "")
+        so_hieu = s.get("so_hieu", "")
+        
+        # Try to parse dieu_so from article name if it's missing (e.g. "Điều 94" -> "94")
+        if not dieu_so and article:
+            dieu_match = re.search(r'[Đđ]i[eề]u\s*(\d+)', article)
+            if dieu_match:
+                dieu_so = dieu_match.group(1)
+        
+        # Luôn giữ nguồn GraphRAG nếu Điều tương ứng được nhắc tới
+        if "GraphRAG" in doc_title:
+            article_num = re.search(r"\d+", article)
+            if article_num and f"điều {article_num.group()}" in normalized_answer:
+                filtered.append(s)
+            continue
+            
+        # Tìm từ khóa cốt lõi của văn bản luật
+        keywords = []
+        doc_lower = doc_title.lower()
+        if "an ninh mạng" in doc_lower:
+            keywords.extend(["an ninh mạng", "luật anm"])
+        if "an toàn thông tin" in doc_lower:
+            keywords.extend(["an toàn thông tin", "luật attt"])
+        if "dữ liệu cá nhân" in doc_lower:
+            keywords.extend(["dữ liệu cá nhân", "bảo vệ dữ liệu", "nghị định 13", "13/2023"])
+        if "sở hữu trí tuệ" in doc_lower or "shtt" in doc_lower:
+            keywords.extend(["sở hữu trí tuệ", "shtt", "quyền tác giả", "tác phẩm"])
+        if "giao dịch điện tử" in doc_lower:
+            keywords.extend(["giao dịch điện tử", "hợp đồng điện tử", "chữ ký số"])
+        if "viễn thông" in doc_lower:
+            # Chỉ thêm "viễn thông" nếu không phải Nghị định 15
+            if "xử phạt" not in doc_lower:
+                keywords.extend(["viễn thông"])
+        if "thương mại điện tử" in doc_lower:
+            keywords.extend(["thương mại điện tử", "tmdt", "sàn thương mại", "52/2013"])
+        if "xử phạt" in doc_lower or "bưu chính" in doc_lower:
+            keywords.extend(["xử phạt", "nghị định 15", "15/2020"])
+        
+        # Nếu không khớp nhóm nào, tách từ trong title nhưng loại bỏ các từ chung chung
+        if not keywords:
+            generic_words = {"điều", "luật", "nghị", "định", "thông", "tư", "quyết", "quy", "chế", "về", "của", "và", "cho", "tại", "quyền", "chi", "tiết"}
+            keywords.extend([w for w in re.findall(r'\w+', doc_lower) if len(w) > 3 and w not in generic_words])
+            
+        # Kiểm tra sự xuất hiện của ký hiệu/số hiệu văn bản hoặc từ khóa cốt lõi
+        has_doc_ref = (so_hieu and so_hieu.lower() in answer_lower) or any(k in normalized_answer for k in keywords)
+        
+        # Kiểm tra sự xuất hiện của số điều
+        if dieu_so:
+            article_num_str = f"điều {dieu_so}"
+            has_article = article_num_str in normalized_answer
+            # Chỉ giữ nguồn nếu câu trả lời chứa cả tên văn bản/số hiệu và số điều của nó
+            if has_doc_ref and has_article:
+                filtered.append(s)
+        else:
+            # Nếu không có số điều (chỉ trích dẫn cấp văn bản), giữ nguồn dựa vào tên văn bản/số hiệu
+            if has_doc_ref:
+                filtered.append(s)
+            
+    # Fallback: nếu lọc hết thì giữ lại toàn bộ nguồn để tránh trống
+    return filtered if filtered else sources
 
 
 def _init_qdrant_history():
@@ -513,7 +599,7 @@ def create_conversation(first_query: str = "") -> str:
             model = get_llm()
             title_prompt = TITLE_PROMPT.format(query=first_query)
             response = model.models.generate_content(
-                model="gemini-3.1-flash-lite-preview",
+                model="gemini-3.1-flash-lite",
                 contents=title_prompt
             )
             title = response.text.strip()[:100]
