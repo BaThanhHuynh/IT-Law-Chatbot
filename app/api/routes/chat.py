@@ -1,6 +1,7 @@
 import json
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi.responses import StreamingResponse
 
 from app.api.schemas import (
     ChatRequest, ChatResponse, ConversationListResponse,
@@ -10,6 +11,7 @@ from app.core.logger import logger
 from app.core.security import verify_api_key
 from app.services.chatbot.engine import (
     generate_response,
+    generate_response_stream,
     create_conversation,
     get_conversation_history,
     get_all_conversations,
@@ -38,6 +40,27 @@ async def chat(request: ChatRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi xử lý: {str(e)}")
+
+
+@chat_router.post("/chat/stream")
+async def chat_stream(request: ChatRequest):
+    """Send a message and get a streaming AI response via SSE."""
+    if not request.message:
+        raise HTTPException(status_code=400, detail="Vui lòng nhập câu hỏi.")
+
+    async def event_generator():
+        try:
+            for chunk in generate_response_stream(request.message, request.conversation_id):
+                yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"[SSE Error] Stream failed: {e}", exc_info=True)
+            yield f"data: {json.dumps({'event': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
 
 
 @chat_router.get("/conversations", response_model=ConversationListResponse)

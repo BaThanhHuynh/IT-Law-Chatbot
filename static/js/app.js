@@ -126,11 +126,11 @@ function renderConversationList(conversations) {
 
 function hideConversation(conversationId) {
     if (!confirm('Bạn có chắc muốn xoá cuộc hội thoại này? (Sẽ chỉ ẩn khỏi màn hình, dữ liệu vẫn an toàn)')) return;
-    
+
     const hiddenConvs = JSON.parse(localStorage.getItem('hiddenConversations') || '[]');
     hiddenConvs.push(conversationId);
     localStorage.setItem('hiddenConversations', JSON.stringify(hiddenConvs));
-    
+
     if (currentConversationId === conversationId) {
         newConversation();
     }
@@ -216,48 +216,208 @@ async function sendMessage() {
     appendMessage('user', message);
     scrollToBottom();
 
-    // Show typing indicator
+    // Show typing indicator — kept alive until first text chunk from server
     const typingEl = showTypingIndicator();
 
-    // Capture the conversation ID at send-time to detect if user switches mid-request
+    // Capture the conversation ID at send-time
     const sendConversationId = currentConversationId;
 
-    // Create AbortController for this request
+    // AbortController for fetch
     if (currentChatAbortController) currentChatAbortController.abort();
     currentChatAbortController = new AbortController();
     const signal = currentChatAbortController.signal;
 
-    try {
-        const result = await apiCall('/api/chat', 'POST', {
-            message: message,
-            conversation_id: currentConversationId,
-        }, signal);
+    // --- Build assistant message container (hidden until first text) ---
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message assistant';
+    const bodyDiv = document.createElement('div');
+    bodyDiv.className = 'message-body';
+    const contentDiv = document.createElement('div');
+    contentDiv.className = 'message-content';
+    bodyDiv.appendChild(contentDiv);
+    msgDiv.appendChild(bodyDiv);
 
-        // Check if user switched conversations while waiting
-        if (currentConversationId !== sendConversationId && sendConversationId !== null) {
-            console.log('[sendMessage] Conversation switched during request, discarding stale response.');
+    let sources = null;
+    let msgShown = false;
+
+    function showMsgAndRemoveTyping() {
+        if (!msgShown) {
+            if (typingEl.parentNode) typingEl.remove();
+            messagesContainer.appendChild(msgDiv);
+            scrollToBottom();
+            msgShown = true;
+        }
+    }
+
+    // --- Typewriter queue ---
+    // SSE pushes raw text into this queue; the animation loop drains it char-by-char
+    let typeQueue = '';       // pending chars not yet displayed
+    let displayedText = '';   // text already shown on screen
+    let streamDone = false;   // SSE stream finished
+    let typeAnimId = null;    // requestAnimationFrame id
+    const CHAR_DELAY = 3;     // ms per character (adjust 5-50 for speed)
+    let lastTypeTime = 0;
+
+    function typewriterTick(ts) {
+        if (!typeQueue.length && streamDone) {
+            // All done — finalize
             return;
         }
 
-        // Remove typing indicator (only if still in DOM)
-        if (typingEl.parentNode) typingEl.remove();
+        const elapsed = ts - lastTypeTime;
+        const charsToAdd = Math.max(1, Math.floor(elapsed / CHAR_DELAY));
 
-        if (result.success) {
-            const data = result.data;
-            currentConversationId = data.conversation_id;
+        if (typeQueue.length > 0 && elapsed >= CHAR_DELAY) {
+            // If queue is falling behind (lots of pending chars), speed up
+            const burst = typeQueue.length > 80 ? Math.min(typeQueue.length, 8) : charsToAdd;
+            const chunk = typeQueue.slice(0, burst);
+            typeQueue = typeQueue.slice(burst);
+            displayedText += chunk;
+            lastTypeTime = ts;
 
-            // Append assistant message with animation (animate = true)
-            appendMessage('assistant', data.answer, data.sources, true);
-
-            // Refresh conversation list
-            loadConversations();
-        } else {
-            appendMessage('assistant', `❌ Lỗi: ${result.error || 'Không xác định'}`);
+            // Re-render with cursor
+            contentDiv.innerHTML = formatMessageContent(displayedText) +
+                '<span class="streaming-cursor"></span>';
+            scrollToBottom();
         }
+
+        typeAnimId = requestAnimationFrame(typewriterTick);
+    }
+
+    // Start the animation loop
+    typeAnimId = requestAnimationFrame((ts) => {
+        lastTypeTime = ts;
+        typeAnimId = requestAnimationFrame(typewriterTick);
+    });
+
+    // Helper: wait until typewriter drains the queue
+    function waitForTypewriterDone() {
+        return new Promise(resolve => {
+            function check() {
+                if (typeQueue.length === 0) { resolve(); return; }
+                setTimeout(check, 20);
+            }
+            check();
+        });
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/chat/stream`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                message: message,
+                conversation_id: currentConversationId,
+            }),
+            signal: signal,
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        if (currentConversationId !== sendConversationId && sendConversationId !== null) {
+            console.log('[sendMessage] Conversation switched, discarding response.');
+            return;
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let sseBuffer = '';
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            sseBuffer += decoder.decode(value, { stream: true });
+
+            // Parse complete SSE frames (separated by \n\n)
+            let boundary;
+            while ((boundary = sseBuffer.indexOf('\n\n')) !== -1) {
+                const frame = sseBuffer.slice(0, boundary);
+                sseBuffer = sseBuffer.slice(boundary + 2);
+
+                for (const line of frame.split('\n')) {
+                    const clean = line.replace(/\r$/, '');
+                    if (!clean.startsWith('data:')) continue;
+
+                    const jsonStr = clean.slice(5).trim();
+                    if (!jsonStr) continue;
+
+                    let evt;
+                    try { evt = JSON.parse(jsonStr); } catch (e) {
+                        console.error('[SSE] JSON parse error:', e, jsonStr);
+                        continue;
+                    }
+
+                    if (evt.event === 'metadata') {
+                        currentConversationId = evt.conversation_id;
+                        if (window.updateGraphVisualization && evt.graph_data) {
+                            window.updateGraphVisualization(evt.graph_data);
+                        }
+                    } else if (evt.event === 'text') {
+                        // Show bubble on first text chunk
+                        showMsgAndRemoveTyping();
+                        // Feed raw text into the typewriter queue
+                        typeQueue += evt.text;
+                    } else if (evt.event === 'sources') {
+                        sources = evt.sources;
+                    } else if (evt.event === 'error') {
+                        showMsgAndRemoveTyping();
+                        cancelAnimationFrame(typeAnimId);
+                        contentDiv.innerHTML = `❌ Lỗi: ${evt.error}`;
+                    }
+                }
+            }
+        }
+
+        // SSE stream ended — wait for typewriter to finish rendering remaining queue
+        streamDone = true;
+        await waitForTypewriterDone();
+        cancelAnimationFrame(typeAnimId);
+
+        // Finalize: remove cursor, add copy button
+        const copyBtnHtml = `
+            <button class="btn-copy-msg" onclick="copyToClipboard(this)" title="Sao chép câu trả lời">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+            </button>
+        `;
+        showMsgAndRemoveTyping();
+        contentDiv.innerHTML = formatMessageContent(displayedText) + copyBtnHtml;
+
+        // Render sources
+        if (sources && sources.length > 0) {
+            const sourcesHtml = `
+                <div class="message-sources">
+                    <div class="sources-title">Nguồn trích dẫn</div>
+                    ${sources.map((s) => {
+                const fullContent = escapeHtml(s.full_content || s.content || '');
+                const docTitle = escapeHtml(s.doc_title || '');
+                const soHieu = escapeHtml(s.so_hieu || '');
+                const article = escapeHtml(s.article || '');
+                return `
+                        <div class="source-item source-item-clickable"
+                             onclick="openSourceModal(this)"
+                             data-full-content="${fullContent}"
+                             data-doc-title="${docTitle}"
+                             data-so-hieu="${soHieu}"
+                             data-article="${article}">
+                            <span class="source-item-text">${docTitle} ${soHieu ? '(' + soHieu + ')' : ''} ${article ? '- ' + article : ''}</span>
+                            <svg class="source-item-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+                        </div>`;
+            }).join('')}
+                </div>`;
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = sourcesHtml;
+            bodyDiv.appendChild(tempDiv.firstElementChild);
+        }
+
+        loadConversations();
+
     } catch (e) {
-        // If aborted (user switched conversation), silently ignore
+        cancelAnimationFrame(typeAnimId);
         if (e.name === 'AbortError') {
-            console.log('[sendMessage] Request aborted due to conversation switch.');
+            console.log('[sendMessage] Request aborted.');
             return;
         }
         if (typingEl.parentNode) typingEl.remove();
@@ -272,6 +432,8 @@ async function sendMessage() {
     scrollToBottom();
     messageInput.focus();
 }
+
+
 
 function sendSuggestion(text) {
     messageInput.value = text;
@@ -292,11 +454,11 @@ function appendMessage(role, content, sources = null, animate = false) {
                 <div class="message-sources">
                     <div class="sources-title">Nguồn trích dẫn</div>
                     ${parsedSources.map((s, i) => {
-                        const fullContent = escapeHtml(s.full_content || s.content || '');
-                        const docTitle = escapeHtml(s.doc_title || '');
-                        const soHieu = escapeHtml(s.so_hieu || '');
-                        const article = escapeHtml(s.article || '');
-                        return `
+                const fullContent = escapeHtml(s.full_content || s.content || '');
+                const docTitle = escapeHtml(s.doc_title || '');
+                const soHieu = escapeHtml(s.so_hieu || '');
+                const article = escapeHtml(s.article || '');
+                return `
                         <div class="source-item source-item-clickable"
                              onclick="openSourceModal(this)"
                              data-full-content="${fullContent}"
@@ -306,7 +468,7 @@ function appendMessage(role, content, sources = null, animate = false) {
                             <span class="source-item-text">${docTitle} ${soHieu ? '(' + soHieu + ')' : ''} ${article ? '- ' + article : ''}</span>
                             <svg class="source-item-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
                         </div>`;
-                    }).join('')}
+            }).join('')}
                 </div>`;
         }
     }
@@ -376,7 +538,7 @@ async function typeWriterHTML(el, htmlString, speed = 15) {
         }
 
         // Thêm con trỏ nhấp nháy giả
-        el.innerHTML = htmlString.substring(0, cursor) + '<span style="border-right: 2px solid var(--text-color); margin-left: 2px; animation: blink 1s step-end infinite;"></span>';
+        el.innerHTML = htmlString.substring(0, cursor) + '<span class="streaming-cursor"></span>';
         scrollToBottom();
         await new Promise(r => setTimeout(r, frameDelay));
     }

@@ -905,8 +905,14 @@ body {
 
 /* ---- Cursor Blink Animation ---- */
 @keyframes blink {
-    0%, 100% { border-color: var(--text-color); }
+    0%, 100% { border-color: var(--text-primary); }
     50% { border-color: transparent; }
+}
+
+.streaming-cursor {
+    border-right: 2px solid var(--text-primary);
+    margin-left: 2px;
+    animation: blink 1s step-end infinite;
 }
 
 /* ---- Clickable Source Items ---- */

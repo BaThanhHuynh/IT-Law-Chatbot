@@ -66,19 +66,23 @@ def multi_query_search(queries: list, top_k: int = None) -> list:
     - Reranking using BAAI/bge-reranker-v2-m3 against queries[0].
     """
     top_k = top_k or Config.TOP_K_RESULTS
-    
+
+    # Bound the rerank pool: each candidate is one cross-encoder forward pass.
+    # Keep the strongest dense candidates + a smaller set of sparse (BM25) ones.
+    pool_size = Config.RERANK_POOL_SIZE
+    n_vector = min(max(top_k * 3, 15), pool_size)
+    n_bm25 = max(pool_size - n_vector, 8)
+
     # 1. Vector Retrieval (Dense)
     vector_candidates: dict = {}
     max_workers = min(len(queries), 8)
-    # Fetch slightly more candidates from vector to allow good re-ranking diversity
-    vector_limit = max(top_k * 4, 20) 
-    
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_query = {}
         for idx, q in enumerate(queries):
-            limit = max(top_k * 4, 20) if idx == 0 else max(top_k, 5)
+            limit = n_vector if idx == 0 else max(top_k, 5)
             future_to_query[executor.submit(_single_query_search, q, limit)] = q
-            
+
         for future in as_completed(future_to_query):
             results = future.result()
             for r in results:
@@ -87,7 +91,9 @@ def multi_query_search(queries: list, top_k: int = None) -> list:
                     r["_source"] = "vector"
                     vector_candidates[dedup_key] = r
 
-    logger.info(f"[HybridSearch] Vector search retrieved {len(vector_candidates)} unique candidate chunks.")
+    # Keep only the strongest dense candidates so the rerank pool stays bounded
+    top_vector = sorted(vector_candidates.values(), key=lambda x: x["score"], reverse=True)[:n_vector]
+    logger.info(f"[HybridSearch] Vector search: {len(vector_candidates)} unique → kept top {len(top_vector)}.")
 
     # 2. BM25 Retrieval (Sparse)
     bm25_candidates = []
@@ -95,20 +101,19 @@ def multi_query_search(queries: list, top_k: int = None) -> list:
     if primary_query:
         try:
             bm25_service = get_bm25_service()
-            # Fetch slightly more candidates from BM25 for re-ranking diversity
-            bm25_limit = max(top_k * 4, 20)
-            bm25_candidates = bm25_service.search(primary_query, top_k=bm25_limit)
-            logger.info(f"[HybridSearch] BM25 retrieved {len(bm25_candidates)} unique candidate chunks.")
+            bm25_candidates = bm25_service.search(primary_query, top_k=n_bm25)
+            logger.info(f"[HybridSearch] BM25 retrieved {len(bm25_candidates)} candidate chunks.")
         except Exception as e:
             logger.error(f"[HybridSearch Error] BM25 search failed: {e}")
 
     # 3. Merge Vector and BM25 candidates
     merged_candidates: dict = {}
-    
-    # Add vector candidates first
-    for key, val in vector_candidates.items():
-        merged_candidates[key] = val
-        
+
+    # Add dense candidates first
+    for r in top_vector:
+        dedup_key = r.get("chunk_id") or f"{r.get('doc_title')}_{r.get('dieu_so')}"
+        merged_candidates[dedup_key] = r
+
     # Add BM25 candidates (deduplicate)
     for r in bm25_candidates:
         dedup_key = r.get("chunk_id") or f"{r.get('doc_title')}_{r.get('dieu_so')}"
@@ -118,7 +123,7 @@ def multi_query_search(queries: list, top_k: int = None) -> list:
             merged_candidates[dedup_key]["_source"] = "hybrid"
 
     candidate_list = list(merged_candidates.values())
-    logger.info(f"[HybridSearch] Merged candidate pool size: {len(candidate_list)} chunks.")
+    logger.info(f"[HybridSearch] Rerank pool size: {len(candidate_list)} chunks (cap={pool_size}).")
 
     # 4. Rerank candidates using Cross-Encoder Reranker
     if primary_query and candidate_list:
@@ -130,10 +135,10 @@ def multi_query_search(queries: list, top_k: int = None) -> list:
             return reranked_results
         except Exception as e:
             logger.error(f"[HybridSearch Error] Reranking failed, falling back: {e}")
-            # Fallback to vector candidates sorted by original score
-            return sorted(vector_candidates.values(), key=lambda x: x["score"], reverse=True)[:top_k + 3]
-            
-    return sorted(vector_candidates.values(), key=lambda x: x["score"], reverse=True)[:top_k + 3]
+            # Fallback to dense candidates sorted by original score
+            return sorted(top_vector, key=lambda x: x["score"], reverse=True)[:top_k + 3]
+
+    return sorted(top_vector, key=lambda x: x["score"], reverse=True)[:top_k + 3]
 
 
 def _parse_qdrant_results(search_result) -> list:

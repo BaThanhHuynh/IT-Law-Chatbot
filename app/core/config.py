@@ -50,6 +50,9 @@ class Config:
     CHUNK_SIZE = 500
     CHUNK_OVERLAP = 100
     TOP_K_RESULTS = 5
+    # Max candidates fed into the cross-encoder reranker. Each candidate is one
+    # cross-encoder forward pass, so this directly bounds rerank latency (heavy on CPU).
+    RERANK_POOL_SIZE = int(os.getenv("RERANK_POOL_SIZE", "25"))
 
     # Input validation
     MAX_QUERY_LENGTH = int(os.getenv("MAX_QUERY_LENGTH", "1000"))

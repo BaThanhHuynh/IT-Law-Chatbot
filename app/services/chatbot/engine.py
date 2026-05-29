@@ -289,25 +289,28 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
 
     # ═══ LUAT MODE: Full pipeline ═══
 
-    # 3.1 Contextual Query Rewriting (chỉ khi LUAT)
+    # 3.1 Rewrite + entity + sub-queries chạy SONG SONG.
+    # Cả 3 đều là LLM call độc lập trên câu hỏi gốc nên gộp vào 1 thread pool,
+    # tránh để rewrite chạy tuần tự trước (tiết kiệm ~1 round-trip mạng).
     raw_history = get_conversation_history(conversation_id, limit=4)
     history_context = ""
     for msg in raw_history:
         role_name = "User" if msg["role"] == "user" else "Bot"
         history_context += f"{role_name}: {msg['content']}\n"
 
-    rewritten_query = query
-    if history_context.strip():
-        rewritten_query = rewrite_query(query, history_context)
-        if rewritten_query != query:
-            logger.info(f"[{conversation_id}] Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
-
-    # 3.2 Chạy song song entity + sub-queries
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        future_entities = executor.submit(extract_entities, rewritten_query)
-        future_sub_queries = executor.submit(generate_sub_queries, rewritten_query)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        future_rewrite = executor.submit(rewrite_query, query, history_context)
+        future_entities = executor.submit(extract_entities, query)
+        future_sub_queries = executor.submit(generate_sub_queries, query)
+        rewritten_query = future_rewrite.result()
         extracted_entities = future_entities.result()
         sub_queries = future_sub_queries.result()
+
+    if rewritten_query != query:
+        logger.info(f"[{conversation_id}] Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
+        # sub_queries sinh từ câu gốc → thêm câu đã rewrite để giữ recall cho câu hỏi nối tiếp
+        if rewritten_query not in sub_queries:
+            sub_queries = [rewritten_query] + sub_queries
 
     # 3.3 Hybrid search (Vector + Graph)
     try:
@@ -731,3 +734,327 @@ def get_all_conversations() -> list:
     except Exception as e:
         logger.error(f"[Error] get_all_conversations failed: {e}")
         return []
+
+
+def generate_response_stream(query: str, conversation_id: str = None):
+    """
+    Main chatbot streaming pipeline.
+    Yields events in dictionary format:
+      1. Initial metadata: {"event": "metadata", "conversation_id": ..., "graph_data": ...}
+      2. Content chunks: {"event": "text", "text": token}
+      3. Citations & final results: {"event": "sources", "sources": ...}
+      4. Done signal: {"event": "done"}
+    """
+    # 1. Create conversation if needed
+    if not conversation_id:
+        conversation_id = create_conversation(query)
+
+    # 2. Save user message (original query)
+    save_message(conversation_id, "user", query)
+
+    # 3. Phân loại intent — Regex trước, LLM sau (tiết kiệm 2-3s cho CHATCHIT)
+    import re as _re
+    _CHATCHIT_PATTERNS = _re.compile(
+        r'^(xin\s*chào|chào\s*bạn|hello|hi\b|hey\b|ok\b|cảm\s*ơn|cám\s*ơn|thanks|thank\s*you'
+        r'|tạm\s*biệt|bye|bạn\s*là\s*ai|bạn\s*tên\s*(gì|j)|bạn\s*có\s*thể\s*(giúp|làm)'
+        r'|tôi\s*hiểu\s*rồi|được\s*rồi|ừ|uh|à|oke|okie|good|tốt|tuyệt|hay|wow'
+        r'|giúp\s*tôi\s*được\s*không|hỗ\s*trợ\s*tôi|có\s*thể\s*giúp'
+        r'|thắc\s*mắc.*bạn\s*giúp)',
+        _re.IGNORECASE
+    )
+
+    query_stripped = query.strip().rstrip('?!.,')
+    intent = "LUAT"
+    
+    if _CHATCHIT_PATTERNS.search(query_stripped) and len(query_stripped) < 120:
+        intent = "CHATCHIT"
+        logger.info(f"[{conversation_id}] (Stream) Query fast-classified as: CHATCHIT (regex)")
+    elif _re.search(
+        r'(tóm\s*tắt|tóm\s*gọn|rút\s*gọn|ngắn\s*gọn\s*lại|nói\s*ngắn|giải\s*thích\s*ngắn'
+        r'|tổng\s*kết|summary|tl;\s*dr|cho\s*tôi\s*bản\s*tóm|nói\s*lại\s*ngắn)',
+        query_stripped, _re.IGNORECASE
+    ) and len(query_stripped) < 200:
+        intent = "TOMTAT"
+        logger.info(f"[{conversation_id}] (Stream) Query fast-classified as: TOMTAT (regex)")
+
+    if intent == "TOMTAT":
+        # Stream summary response
+        # Send initial metadata
+        yield {"event": "metadata", "conversation_id": conversation_id, "graph_data": {"nodes": [], "edges": []}}
+        
+        # Get last bot message
+        recent_history = get_conversation_history(conversation_id, limit=4)
+        last_bot_msg = ""
+        for msg in reversed(recent_history):
+            if msg["role"] == "assistant" and len(msg.get("content", "")) > 50:
+                last_bot_msg = msg["content"]
+                break
+
+        if last_bot_msg:
+            try:
+                model = get_llm()
+                summary_response = model.models.generate_content_stream(
+                    model="gemini-3.1-flash-lite",
+                    contents=f"Hãy tóm tắt nội dung sau thành 3-5 ý chính, mỗi ý 1-2 câu ngắn gọn, dùng bullet point:\n\n{last_bot_msg[:3000]}",
+                    config=types.GenerateContentConfig(
+                        system_instruction=(
+                            "Bạn là trợ lý pháp luật CNTT. Tóm tắt nội dung luật thành 3-5 ý chính ngắn gọn. "
+                            "Giữ lại số điều, khoản quan trọng. Dùng bullet point (•). Không thêm thông tin mới."
+                        ),
+                    )
+                )
+                full_answer = ""
+                for chunk in summary_response:
+                    text = chunk.text or ""
+                    full_answer += text
+                    yield {"event": "text", "text": text}
+                save_message(conversation_id, "assistant", full_answer, [])
+            except Exception as e:
+                logger.error(f"[Error] TOMTAT Stream LLM failed: {e}")
+                err_msg = "Xin lỗi, tôi không thể tóm tắt lúc này. Vui lòng thử lại."
+                yield {"event": "text", "text": err_msg}
+                save_message(conversation_id, "assistant", err_msg, [])
+        else:
+            err_msg = "Chưa có nội dung luật nào để tóm tắt. Bạn hãy hỏi một câu hỏi về luật trước nhé!"
+            yield {"event": "text", "text": err_msg}
+            save_message(conversation_id, "assistant", err_msg, [])
+            
+        yield {"event": "sources", "sources": []}
+        yield {"event": "done"}
+        return
+
+    if intent == "LUAT":
+        intent = classify_intent(query)
+        logger.info(f"[{conversation_id}] (Stream) Query classified as: {intent}")
+
+    if intent == "CHATCHIT":
+        yield {"event": "metadata", "conversation_id": conversation_id, "graph_data": {"nodes": [], "edges": []}}
+        
+        chatchit_system = (
+            "Bạn là trợ lý tư vấn pháp luật CNTT. "
+            "Nếu người dùng chào hỏi mở đầu, hãy chào lại thân thiện và hỏi xem họ cần tư vấn vấn đề pháp lý gì. "
+            "Nếu người dùng cảm ơn hoặc tạm biệt, hãy đáp lại lịch sự. "
+            "Yêu cầu chung: Trả lời THẬT NGẮN GỌN (tối đa 2 câu), không liệt kê, không giải thích dài dòng."
+        )
+
+        try:
+            model = get_llm()
+            chatchit_response = model.models.generate_content_stream(
+                model="gemini-3.1-flash-lite",
+                contents=query,
+                config=types.GenerateContentConfig(
+                    system_instruction=chatchit_system,
+                )
+            )
+            full_answer = ""
+            for chunk in chatchit_response:
+                text = chunk.text or ""
+                full_answer += text
+                yield {"event": "text", "text": text}
+            save_message(conversation_id, "assistant", full_answer, [])
+        except Exception as e:
+            logger.error(f"[Error] CHATCHIT Stream LLM failed: {e}")
+            err_msg = "Chào bạn! Tôi sẵn sàng hỗ trợ bạn về pháp luật CNTT. Bạn cần tư vấn gì?"
+            yield {"event": "text", "text": err_msg}
+            save_message(conversation_id, "assistant", err_msg, [])
+            
+        yield {"event": "sources", "sources": []}
+        yield {"event": "done"}
+        return
+
+    # ═══ LUAT MODE: Full pipeline ═══
+    # Rewrite + entity + sub-queries chạy SONG SONG (xem ghi chú ở generate_response).
+    raw_history = get_conversation_history(conversation_id, limit=4)
+    history_context = ""
+    for msg in raw_history:
+        role_name = "User" if msg["role"] == "user" else "Bot"
+        history_context += f"{role_name}: {msg['content']}\n"
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        future_rewrite = executor.submit(rewrite_query, query, history_context)
+        future_entities = executor.submit(extract_entities, query)
+        future_sub_queries = executor.submit(generate_sub_queries, query)
+        rewritten_query = future_rewrite.result()
+        extracted_entities = future_entities.result()
+        sub_queries = future_sub_queries.result()
+
+    if rewritten_query != query:
+        logger.info(f"[{conversation_id}] (Stream) Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
+        if rewritten_query not in sub_queries:
+            sub_queries = [rewritten_query] + sub_queries
+
+    # Import hybrid_search inside function to avoid circular import issues
+    from app.services.graphrag.knowledge_graph import hybrid_search
+    try:
+        logger.info(f"[{conversation_id}] (Stream) Extracted entities: {extracted_entities}")
+
+        search_results = hybrid_search(
+            query=rewritten_query,
+            sub_queries=sub_queries,
+            entities=extracted_entities,
+            top_k=Config.TOP_K_RESULTS,
+        )
+
+        graph_data = search_results.get("graph_data", {"nodes": [], "edges": []})
+        rag_context = get_context_from_results(search_results["vector_results"])
+        graph_context = search_results.get("graph_context", "")
+
+    except Exception as e:
+        logger.error(f"[Error] Search failed: {e}")
+        rag_context = "Không thể truy xuất dữ liệu."
+        graph_context = ""
+        graph_data = {"nodes": [], "edges": []}
+        search_results = {"vector_results": []}
+
+    import re as _re_ctx
+    _PENALTY_KEYWORDS = _re_ctx.compile(
+        r'(xử\s*phạt|mức\s*phạt|phạt\s*tiền|vi\s*phạm\s*hành\s*chính|chế\s*tài|bị\s*phạt'
+        r'|xử\s*lý|hình\s*thức.*phạt|xử\s*phạt\s*bổ\s*sung|khắc\s*phục)',
+        _re_ctx.IGNORECASE
+    )
+    if _PENALTY_KEYWORDS.search(rewritten_query) or _PENALTY_KEYWORDS.search(query):
+        dieu4_context = (
+            "\n\n--- Đoạn BỔ SUNG [Nghị định 15/2020/NĐ-CP - Điều 4. Quy định về mức phạt tiền] (QUY TẮC NỀN TẢNG) ---\n"
+            "3. Mức phạt tiền quy định tại Chương II của Nghị định này là mức phạt tiền đối với tổ chức. "
+            "Đối với cùng một hành vi vi phạm hành chính thì mức phạt tiền đối với cá nhân bằng 1/2 mức phạt tiền đối với tổ chức.\n"
+            "4. Thẩm quyền xử phạt vi phạm hành chính quy định tại Chương III của Nghị định này là thẩm quyền áp dụng "
+            "đối với một hành vi vi phạm hành chính của cá nhân."
+        )
+        rag_context += dieu4_context
+        logger.info(f"[{conversation_id}] (Stream) Auto-injected Điều 4 NĐ 15/2020 (penalty ÷2 rule)")
+
+    rag_context = _re_ctx.sub(r'(?m)^(\d+)\.\s+', r'\n**[KHOẢN \1]** ', rag_context)
+
+    system_prompt = SYSTEM_PROMPT
+    prompt = RAG_PROMPT_TEMPLATE.format(
+        rag_context=rag_context,
+        graph_context=graph_context,
+        query=rewritten_query,
+    )
+
+    history = get_conversation_history(conversation_id, limit=6)
+    chat_history = []
+    for msg in history[:-1]:  # Exclude the current user message
+        chat_history.append(
+            types.Content(
+                role="user" if msg["role"] == "user" else "model",
+                parts=[types.Part.from_text(text=msg["content"])]
+            )
+        )
+
+    # Yield metadata first (contains conversation_id and graph_data)
+    yield {"event": "metadata", "conversation_id": conversation_id, "graph_data": graph_data}
+
+    # Stream main response
+    full_answer = ""
+    try:
+        if query.strip().lower().startswith("/mock"):
+            logger.info("MOCK mode activated. Bypassing Gemini API.")
+            full_answer = "Dữ liệu tìm thấy từ CSDL (Mock Mode):\n\n" + rag_context
+            yield {"event": "text", "text": full_answer}
+        else:
+            model = get_llm()
+            chat = model.chats.create(
+                model="gemini-3.1-flash-lite",
+                history=chat_history,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_prompt,
+                )
+            )
+            
+            # Inline retry logic for the main response generation
+            max_retries = 3
+            delay = 2
+            for attempt in range(max_retries):
+                try:
+                    response = chat.send_message_stream(prompt)
+                    for chunk in response:
+                        text = chunk.text or ""
+                        full_answer += text
+                        yield {"event": "text", "text": text}
+                    break
+                except Exception as e:
+                    error_str = str(e)
+                    if "503" in error_str or "500" in error_str or "UNAVAILABLE" in error_str or "429" in error_str:
+                        if attempt < max_retries - 1:
+                            logger.warning(f"[generate_response_stream] Gemini API overload. Retrying in {delay}s... (Attempt {attempt+1}/{max_retries})")
+                            time.sleep(delay)
+                            delay *= 2
+                            continue
+                    raise e
+    except Exception as e:
+        logger.error(f"[Error] LLM stream generation failed: {e}")
+        err_msg = "Hiện tại máy chủ đang quá tải. Xin vui lòng thử lại sau giây lát."
+        full_answer += err_msg
+        yield {"event": "text", "text": err_msg}
+
+    # Now build and filter sources after full_answer is fully generated
+    from app.services.rag.embeddings import calibrate_score
+    all_candidates = []
+    seen_articles = set()
+
+    for r in search_results.get("vector_results", []):
+        doc = r.get("doc_title", "")
+        article_key = (doc, r.get("article", ""))
+        if article_key not in seen_articles:
+            seen_articles.add(article_key)
+            all_candidates.append({
+                "article": r.get("article", ""),
+                "content": r.get("content", "")[:200],
+                "full_content": r.get("content", ""),
+                "score": calibrate_score(r.get("score", 0)),
+                "doc_title": doc,
+                "so_hieu": r.get("so_hieu", ""),
+                "dieu_so": r.get("dieu_so", ""),
+            })
+
+    for r in search_results.get("matched_entities", [])[:2]:
+        entity = r.get("entity", {})
+        real_score = r.get("score", 0)
+        if real_score >= 0.35 and entity.get("entity_type") in ["DIEU_LUAT", "VAN_BAN"]:
+            article_key = ("Mạng Lưới Tri Thức (GraphRAG)", entity.get("name", ""))
+            if article_key not in seen_articles:
+                seen_articles.add(article_key)
+                all_candidates.append({
+                    "article": entity.get("name", ""),
+                    "content": entity.get("description", "")[:200],
+                    "full_content": entity.get("description", ""),
+                    "score": calibrate_score(real_score),
+                    "doc_title": "Mạng Lưới Tri Thức (GraphRAG)",
+                    "so_hieu": "",
+                    "dieu_so": "",
+                })
+
+    filtered_candidates = _filter_sources_by_citations(full_answer, all_candidates)
+
+    MAX_SOURCES = 4
+    sources = []
+    seen_doc_titles = set()
+    seen_articles_final = set()
+
+    for s in filtered_candidates:
+        doc = s.get("doc_title", "")
+        article_key = (doc, s.get("article", ""))
+        if doc not in seen_doc_titles and article_key not in seen_articles_final:
+            seen_doc_titles.add(doc)
+            seen_articles_final.add(article_key)
+            sources.append(s)
+        if len(sources) >= MAX_SOURCES:
+            break
+
+    if len(sources) < MAX_SOURCES:
+        for s in filtered_candidates:
+            article_key = (s.get("doc_title", ""), s.get("article", ""))
+            if article_key not in seen_articles_final:
+                seen_articles_final.add(article_key)
+                sources.append(s)
+            if len(sources) >= MAX_SOURCES:
+                break
+
+    # Save to history
+    save_message(conversation_id, "assistant", full_answer, sources)
+
+    # Yield sources & done
+    yield {"event": "sources", "sources": sources}
+    yield {"event": "done"}
+
