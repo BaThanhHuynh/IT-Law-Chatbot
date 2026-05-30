@@ -40,9 +40,6 @@ class Config:
     # Max number of embeddings to keep in LRU cache (reduces repeated model inference)
     EMBEDDING_CACHE_SIZE = int(os.getenv("EMBEDDING_CACHE_SIZE", "512"))
 
-    # Reranker model
-    RERANKER_MODEL = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
-
     # BM25 Corpus Path
     BM25_CORPUS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "law_crawler", "data", "law_chunks_hier.jsonl")
 
@@ -50,9 +47,13 @@ class Config:
     CHUNK_SIZE = 800
     CHUNK_OVERLAP = 100
     TOP_K_RESULTS = 5
-    # Max candidates fed into the cross-encoder reranker. Each candidate is one
-    # cross-encoder forward pass, so this directly bounds rerank latency (heavy on CPU).
-    RERANK_POOL_SIZE = int(os.getenv("RERANK_POOL_SIZE", "25"))
+    # Hybrid retrieval pool: total candidates considered across dense + BM25
+    # before Reciprocal Rank Fusion (RRF) selects the final top_k. No model
+    # forward pass is involved, so this is cheap to raise for more recall.
+    HYBRID_POOL_SIZE = int(os.getenv("HYBRID_POOL_SIZE", os.getenv("RERANK_POOL_SIZE", "25")))
+    # RRF damping constant. Higher k flattens the contribution of top ranks;
+    # 60 is the standard default from the original RRF paper (Cormack et al.).
+    RRF_K = int(os.getenv("RRF_K", "60"))
 
     # Input validation
     MAX_QUERY_LENGTH = int(os.getenv("MAX_QUERY_LENGTH", "1000"))

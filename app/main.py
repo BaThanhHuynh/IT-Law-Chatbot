@@ -46,7 +46,6 @@ async def lifespan(app: FastAPI):
     logger.info("Đang Warmup hệ thống...")
     try:
         from app.services.rag.embeddings import get_model as get_embedding_model
-        from app.services.rag.reranker import get_reranker_service
         from app.services.rag.bm25 import get_bm25_service
         from app.services.chatbot.engine import get_llm
         from app.services.graphrag.knowledge_graph import get_knowledge_graph
@@ -61,20 +60,14 @@ async def lifespan(app: FastAPI):
             get_embedding_model()
             logger.info("Nạp Dek21 Embedding Model hoàn tất.")
             
-        def load_reranker():
-            logger.info("Đang nạp Reranker Model vào RAM...")
-            get_reranker_service().get_model()
-            logger.info("Nạp Reranker Model hoàn tất.")
-            
         def load_bm25():
             logger.info("Đang nạp BM25 Service & chỉ mục corpus vào RAM...")
             get_bm25_service()
             logger.info("Nạp BM25 Service hoàn tất.")
             
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             futures = [
                 executor.submit(load_embeddings),
-                executor.submit(load_reranker),
                 executor.submit(load_bm25)
             ]
             concurrent.futures.wait(futures)

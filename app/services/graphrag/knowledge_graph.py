@@ -7,6 +7,7 @@ Architecture:
   It orchestrates: multi-query vector search + KG entity search + graph traversal.
 """
 import re
+from concurrent.futures import ThreadPoolExecutor
 from app.core.config import Config
 from app.core.logger import logger
 from app.services.rag.retriever import multi_query_search
@@ -569,6 +570,40 @@ def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str = "
     return vector_results
 
 
+# ── Thread-safe wrappers: preserve the original try/except fallbacks so a
+#    failure in one parallel branch never breaks the others. ────────────────
+def _safe_search_entities(kg: "KnowledgeGraph", term: str) -> list:
+    try:
+        return kg.search_entities(term, top_k=3)
+    except Exception as e:
+        logger.error(f"[KG Error] Entity search failed: {e}")
+        return []
+
+
+def _safe_expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str) -> list:
+    try:
+        return _expand_via_graph(vector_results, kg, query=query, top_extra=2)
+    except Exception as e:
+        logger.warning(f"[GraphExpand] Skipped due to error: {e}")
+        return vector_results
+
+
+def _safe_graph_context(kg: "KnowledgeGraph", entity_ids: list) -> str:
+    try:
+        return kg.get_graph_context(entity_ids, depth=2)
+    except Exception as e:
+        logger.error(f"[KG Error] Graph context failed: {e}")
+        return ""
+
+
+def _safe_graph_viz(kg: "KnowledgeGraph", entity_ids: list) -> dict:
+    try:
+        return kg.get_graph_data_for_visualization(entity_ids, depth=1)
+    except Exception as e:
+        logger.error(f"[KG Error] Graph viz failed: {e}")
+        return {"nodes": [], "edges": []}
+
+
 def hybrid_search(query: str, sub_queries: list = None, entities: str = None, top_k: int = 5) -> dict:
     """
     Hybrid search: combine multi-query vector search + knowledge graph traversal.
@@ -608,7 +643,16 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
                 f"+ abbr:{1 if expanded != query else 0} "
                 f"+ static:{len(static_queries)})")
     
-    vector_results = multi_query_search(all_queries, top_k=top_k)
+    # ── 1. Multi-query Vector Search ∥ KG Entity Search ───────────────
+    # These two are independent (entity search only needs the query text), so
+    # we overlap the Qdrant/embedding work with the Neo4j vector lookup.
+    kg = get_knowledge_graph()
+    graph_search_term = entities if entities else query
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_vector = ex.submit(multi_query_search, all_queries, top_k)
+        f_entities = ex.submit(_safe_search_entities, kg, graph_search_term)
+        vector_results = f_vector.result()
+        kg_results = f_entities.result()
 
     # NOTE: Không hardcode fallback inject điều luật cụ thể ở đây.
     # Việc tìm đúng điều luật được đảm bảo qua 3 lớp:
@@ -616,30 +660,10 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
     #   2. Static queries trong query_expansion.py (trỏ đúng Điều/Khoản theo chủ đề)
     #   3. _expand_via_graph() bên dưới (bổ sung điều luật liên quan từ graph)
 
-    # ── 1.5. Graph Re-ranking ─────────────────────────────────────────
-
-    # Sau khi RAG tìm được top-k, duyệt đồ thị để bổ sung các điều luật
-    # có liên hệ (tham chiếu, liên kết) mà vector search có thể bỏ sót.
-    # VD: RAG tìm được "Điều 7 cấm hành vi" → Graph kéo thêm "Điều 84 mức phạt"
-    # KEY: Truyền query để tính cosine similarity — chỉ inject chunk thực sự liên quan
-    kg = get_knowledge_graph()
-    try:
-        vector_results = _expand_via_graph(vector_results, kg, query=query, top_extra=2)
-    except Exception as e:
-        logger.warning(f"[GraphExpand] Skipped due to error: {e}")
-
-    # ── 2. Knowledge Graph Entity Search ──────────────────────────────
-    graph_search_term = entities if entities else query
-    try:
-        kg_results = kg.search_entities(graph_search_term, top_k=3)
-    except Exception as e:
-        logger.error(f"[KG Error] Entity search failed: {e}")
-        kg_results = []
-
-    # ── 3. Expand Graph Context ───────────────────────────────────────
+    # ── 2. Build matched entity ids (KG hits + RAG top-3) ─────────────
+    # Computed from the front of vector_results, so it is unaffected by the
+    # graph-expanded chunks that _expand_via_graph appends to the tail.
     matched_entity_ids = [r["entity"]["entity_id"] for r in kg_results]
-
-    # Also bridge vector results → graph entities (using exact entity_id)
     for vr in vector_results[:3]:
         so_hieu = vr.get("so_hieu", "")
         dieu_so = vr.get("dieu_so", "")
@@ -648,17 +672,22 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
             if article_entity_id and article_entity_id not in matched_entity_ids:
                 matched_entity_ids.append(article_entity_id)
 
-    try:
-        if matched_entity_ids:
-            graph_context = kg.get_graph_context(matched_entity_ids, depth=2)
-            graph_data = kg.get_graph_data_for_visualization(matched_entity_ids, depth=1)
-        else:
-            graph_context = ""
-            graph_data = {"nodes": [], "edges": []}
-    except Exception as e:
-        logger.error(f"[KG Error] Graph context failed: {e}")
-        graph_context = ""
-        graph_data = {"nodes": [], "edges": []}
+    # ── 3. Graph expand ∥ graph context ∥ viz data ────────────────────
+    # All three are mutually independent: expand only appends to the tail of
+    # vector_results, while context/viz read the already-fixed entity ids.
+    # Running them concurrently collapses three serial Neo4j round-trips into
+    # one, which is the single biggest cut to time-to-first-token.
+    graph_context = ""
+    graph_data = {"nodes": [], "edges": []}
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        f_expand = ex.submit(_safe_expand_via_graph, vector_results, kg, query)
+        f_context = ex.submit(_safe_graph_context, kg, matched_entity_ids) if matched_entity_ids else None
+        f_viz = ex.submit(_safe_graph_viz, kg, matched_entity_ids) if matched_entity_ids else None
+        vector_results = f_expand.result()
+        if f_context:
+            graph_context = f_context.result()
+        if f_viz:
+            graph_data = f_viz.result()
 
     return {
         "vector_results": vector_results,

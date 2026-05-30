@@ -247,7 +247,10 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         }
 
     else:
-        raw_history = get_conversation_history(conversation_id, limit=4)
+        # Fetch history once (limit=6) and reuse for both the rewrite context
+        # and the final chat history — avoids a second Qdrant scroll round-trip.
+        history = get_conversation_history(conversation_id, limit=6)
+        raw_history = history[-4:]
         history_context = ""
         for msg in raw_history:
             role_name = "User" if msg["role"] == "user" else "Bot"
@@ -258,12 +261,12 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             future_rewrite = executor.submit(rewrite_query, query, history_context)
             future_entities = executor.submit(extract_entities, query)
             future_sub_queries = executor.submit(generate_sub_queries, query)
-            
+
             intent = future_intent.result()
             rewritten_query = future_rewrite.result()
             extracted_entities = future_entities.result()
             sub_queries = future_sub_queries.result()
-            
+
         logger.info(f"[{conversation_id}] Query classified as: {intent}")
 
     if intent == "CHATCHIT":
@@ -363,8 +366,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         query=rewritten_query,
     )
 
-    # 4. Get conversation history for context
-    history = get_conversation_history(conversation_id, limit=6)
+    # 4. Reuse the conversation history fetched above (no second Qdrant scroll).
     chat_history = []
     for msg in history[:-1]:  # Exclude the current user message
         chat_history.append(
@@ -817,7 +819,10 @@ def generate_response_stream(query: str, conversation_id: str = None):
         return
 
     if intent == "LUAT":
-        raw_history = get_conversation_history(conversation_id, limit=4)
+        # Fetch history once (limit=6) and reuse for both the rewrite context
+        # and the final chat history — avoids a second Qdrant scroll round-trip.
+        history = get_conversation_history(conversation_id, limit=6)
+        raw_history = history[-4:]
         history_context = ""
         for msg in raw_history:
             role_name = "User" if msg["role"] == "user" else "Bot"
@@ -828,12 +833,12 @@ def generate_response_stream(query: str, conversation_id: str = None):
             future_rewrite = executor.submit(rewrite_query, query, history_context)
             future_entities = executor.submit(extract_entities, query)
             future_sub_queries = executor.submit(generate_sub_queries, query)
-            
+
             intent = future_intent.result()
             rewritten_query = future_rewrite.result()
             extracted_entities = future_entities.result()
             sub_queries = future_sub_queries.result()
-            
+
         logger.info(f"[{conversation_id}] (Stream) Query classified as: {intent}")
 
     if intent == "CHATCHIT":
@@ -928,7 +933,7 @@ def generate_response_stream(query: str, conversation_id: str = None):
         query=rewritten_query,
     )
 
-    history = get_conversation_history(conversation_id, limit=6)
+    # Reuse the history fetched above (no second Qdrant scroll).
     chat_history = []
     for msg in history[:-1]:  # Exclude the current user message
         chat_history.append(

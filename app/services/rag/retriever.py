@@ -5,7 +5,6 @@ from app.services.rag.embeddings import get_embedding
 from app.core.config import Config
 from app.core.logger import logger
 from app.services.rag.bm25 import get_bm25_service
-from app.services.rag.reranker import get_reranker_service
 
 _client = None
 
@@ -66,27 +65,54 @@ def _single_query_search_with_embedding(query_embedding: list, top_k: int) -> li
         return []
 
 
+def _dedup_key(r: dict) -> str:
+    """Stable key to deduplicate a chunk across the dense / BM25 result lists."""
+    return r.get("chunk_id") or f"{r.get('doc_title')}_{r.get('dieu_so')}"
+
+
+def _normalize_bm25_scores(bm25_results: list) -> None:
+    """Map raw BM25 scores into a cosine-like ~[0.30, 0.60] band, in place.
+
+    Downstream calibrate_score() and the graph-injection threshold both assume a
+    cosine-similarity scale (~0.3–0.7). Raw BM25 scores are unbounded and would
+    saturate those functions, so we min-max normalize the sparse hits onto a
+    comparable band purely for display/calibration. Final ordering is decided by
+    RRF rank, not by these values.
+    """
+    if not bm25_results:
+        return
+    raw = [r.get("score", 0.0) for r in bm25_results]
+    lo, hi = min(raw), max(raw)
+    span = (hi - lo) or 1.0
+    for r in bm25_results:
+        norm = (r.get("score", 0.0) - lo) / span          # 0..1
+        r["score"] = round(0.30 + 0.30 * norm, 3)          # 0.30..0.60
+
+
 def multi_query_search(queries: list, top_k: int = None) -> list:
     """
-    Hybrid Multi-Query search with BM25 and Cross-Encoder Reranker.
-    - Retrieving candidate chunks from Vector DB (parallel search).
-    - Retrieving candidate chunks from BM25.
-    - Merging both candidate pools and deduplicating.
-    - Reranking using BAAI/bge-reranker-v2-m3 against queries[0].
+    Reranker-free hybrid retrieval using Reciprocal Rank Fusion (RRF).
+
+    Pipeline:
+      1. Run each (sub-)query against the dense vector index in parallel,
+         keeping one ranked list per query.
+      2. Run the primary query against the sparse BM25 index (one ranked list).
+      3. Fuse every ranked list with RRF:  score(d) = Σ 1 / (k + rank_i(d)).
+
+    RRF replaces the BAAI/bge-reranker-v2-m3 cross-encoder. It needs no model
+    forward pass (removing the dominant CPU latency cost) yet preserves precision
+    by rewarding chunks that rank highly across multiple query reformulations and
+    BM25 — the same consensus signal the cross-encoder approximated.
     """
     top_k = top_k or Config.TOP_K_RESULTS
+    pool_size = Config.HYBRID_POOL_SIZE
+    primary_query = queries[0] if queries else ""
 
-    # Bound the rerank pool: each candidate is one cross-encoder forward pass.
-    # Keep the strongest dense candidates + a smaller set of sparse (BM25) ones.
-    pool_size = Config.RERANK_POOL_SIZE
+    # Retrieval depth: the primary query goes deeper, variants stay shallow.
     n_vector = min(max(top_k * 3, 15), pool_size)
     n_bm25 = max(pool_size - n_vector, 8)
 
-    # 1. Vector Retrieval (Dense)
-    vector_candidates: dict = {}
-    max_workers = min(len(queries), 8)
-
-    # Batch embed all sub-queries to avoid thread execution contention / GIL bottlenecks
+    # 1. Dense retrieval — one ranked list per sub-query (parallel).
     from app.services.rag.embeddings import get_embeddings_batch
     try:
         query_embeddings = get_embeddings_batch(queries)
@@ -95,69 +121,71 @@ def multi_query_search(queries: list, top_k: int = None) -> list:
         logger.error(f"[Error] Batch embedding subqueries failed, falling back: {e}")
         query_embeddings_list = [get_embedding(q).tolist() for q in queries]
 
+    per_query_results: list = [[] for _ in queries]
+    max_workers = min(len(queries), 8)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_query = {}
+        future_to_idx = {}
         for idx, q in enumerate(queries):
             limit = n_vector if idx == 0 else max(top_k, 5)
-            q_emb = query_embeddings_list[idx]
-            future_to_query[executor.submit(_single_query_search_with_embedding, q_emb, limit)] = q
-
-        for future in as_completed(future_to_query):
+            future_to_idx[executor.submit(
+                _single_query_search_with_embedding, query_embeddings_list[idx], limit
+            )] = idx
+        for future in as_completed(future_to_idx):
+            idx = future_to_idx[future]
             results = future.result()
             for r in results:
-                dedup_key = r.get("chunk_id") or f"{r.get('doc_title')}_{r.get('dieu_so')}"
-                if dedup_key not in vector_candidates or r["score"] > vector_candidates[dedup_key]["score"]:
-                    r["_source"] = "vector"
-                    vector_candidates[dedup_key] = r
+                r["_source"] = "vector"
+            per_query_results[idx] = results
 
-    # Keep only the strongest dense candidates so the rerank pool stays bounded
-    top_vector = sorted(vector_candidates.values(), key=lambda x: x["score"], reverse=True)[:n_vector]
-    logger.info(f"[HybridSearch] Vector search: {len(vector_candidates)} unique → kept top {len(top_vector)}.")
-
-    # 2. BM25 Retrieval (Sparse)
-    bm25_candidates = []
-    primary_query = queries[0] if queries else ""
+    # 2. Sparse retrieval — single BM25 ranked list on the primary query.
+    bm25_results: list = []
     if primary_query:
         try:
-            bm25_service = get_bm25_service()
-            bm25_candidates = bm25_service.search(primary_query, top_k=n_bm25)
-            logger.info(f"[HybridSearch] BM25 retrieved {len(bm25_candidates)} candidate chunks.")
+            bm25_results = get_bm25_service().search(primary_query, top_k=n_bm25)
+            _normalize_bm25_scores(bm25_results)
+            logger.info(f"[HybridSearch] BM25 retrieved {len(bm25_results)} candidates.")
         except Exception as e:
             logger.error(f"[HybridSearch Error] BM25 search failed: {e}")
 
-    # 3. Merge Vector and BM25 candidates
-    merged_candidates: dict = {}
-
-    # Add dense candidates first
-    for r in top_vector:
-        dedup_key = r.get("chunk_id") or f"{r.get('doc_title')}_{r.get('dieu_so')}"
-        merged_candidates[dedup_key] = r
-
-    # Add BM25 candidates (deduplicate)
-    for r in bm25_candidates:
-        dedup_key = r.get("chunk_id") or f"{r.get('doc_title')}_{r.get('dieu_so')}"
-        if dedup_key not in merged_candidates:
-            merged_candidates[dedup_key] = r
+    # 3. Pick one representative object per unique chunk.
+    #    Prefer the dense copy (carries a real cosine score); flag hybrid hits.
+    obj_by_key: dict = {}
+    for results in per_query_results:
+        for r in results:
+            key = _dedup_key(r)
+            if key not in obj_by_key or r.get("score", 0) > obj_by_key[key].get("score", 0):
+                obj_by_key[key] = r
+    for r in bm25_results:
+        key = _dedup_key(r)
+        if key in obj_by_key:
+            obj_by_key[key]["_source"] = "hybrid"   # retrieved by both dense & sparse
         else:
-            merged_candidates[dedup_key]["_source"] = "hybrid"
+            obj_by_key[key] = r                       # BM25-only candidate
 
-    candidate_list = list(merged_candidates.values())
-    logger.info(f"[HybridSearch] Rerank pool size: {len(candidate_list)} chunks (cap={pool_size}).")
+    # 4. Reciprocal Rank Fusion across every ranked list (dense lists + BM25).
+    rrf_k = Config.RRF_K
+    fused: dict = {}
+    for results in per_query_results + [bm25_results]:
+        for rank, r in enumerate(results):
+            key = _dedup_key(r)
+            fused[key] = fused.get(key, 0.0) + 1.0 / (rrf_k + rank + 1)
 
-    # 4. Rerank candidates using Cross-Encoder Reranker
-    if primary_query and candidate_list:
-        try:
-            reranker = get_reranker_service()
-            rerank_limit = top_k + 3
-            reranked_results = reranker.rerank(primary_query, candidate_list, top_k=rerank_limit)
-            logger.info(f"[HybridSearch] Reranking completed. Returned top {len(reranked_results)} chunks.")
-            return reranked_results
-        except Exception as e:
-            logger.error(f"[HybridSearch Error] Reranking failed, falling back: {e}")
-            # Fallback to dense candidates sorted by original score
-            return sorted(top_vector, key=lambda x: x["score"], reverse=True)[:top_k + 3]
+    ranked_keys = sorted(fused, key=lambda k: fused[k], reverse=True)
 
-    return sorted(top_vector, key=lambda x: x["score"], reverse=True)[:top_k + 3]
+    final = []
+    for key in ranked_keys[: top_k + 3]:
+        cand = obj_by_key.get(key)
+        if cand is None:
+            continue
+        cand["rrf_score"] = round(fused[key], 5)
+        final.append(cand)
+
+    logger.info(
+        f"[HybridSearch] RRF fused {len(fused)} unique chunks from "
+        f"{len(queries)} dense lists + BM25 → returning top {len(final)} "
+        f"(pool={pool_size}, k={rrf_k})."
+    )
+    return final
 
 
 def _parse_qdrant_results(search_result) -> list:

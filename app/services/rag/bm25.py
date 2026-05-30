@@ -15,18 +15,21 @@ class BM25Okapi:
         self.avgdl = sum(self.doc_lengths) / self.corpus_size
         self.doc_freqs = {}
         self.idf = {}
-        self.term_freqs = []
-        
+        # Inverted index: term -> list of (doc_idx, term_frequency).
+        # Lets get_scores touch only documents that actually contain a query
+        # term, instead of scanning the whole corpus once per term.
+        self.postings = {}
+
         # Build index
-        for doc in corpus:
+        for idx, doc in enumerate(corpus):
             frequencies = {}
             for term in doc:
                 frequencies[term] = frequencies.get(term, 0) + 1
-            self.term_freqs.append(frequencies)
-            
-            for term in frequencies:
+
+            for term, tf in frequencies.items():
                 self.doc_freqs[term] = self.doc_freqs.get(term, 0) + 1
-                
+                self.postings.setdefault(term, []).append((idx, tf))
+
         # Calculate IDF
         for term, freq in self.doc_freqs.items():
             # Standard BM25 IDF formula with smoothing
@@ -34,18 +37,16 @@ class BM25Okapi:
 
     def get_scores(self, query):
         scores = [0.0] * self.corpus_size
+        k1, b, avgdl = self.k1, self.b, self.avgdl
         for term in query:
-            if term not in self.idf:
+            idf_val = self.idf.get(term)
+            if idf_val is None:
                 continue
-            idf_val = self.idf[term]
-            for idx in range(self.corpus_size):
-                tf = self.term_freqs[idx].get(term, 0)
-                if tf == 0:
-                    continue
+            # Only iterate documents that contain this term (inverted index).
+            for idx, tf in self.postings[term]:
                 doc_len = self.doc_lengths[idx]
-                numerator = tf * (self.k1 + 1)
-                denominator = tf + self.k1 * (1 - self.b + self.b * doc_len / self.avgdl)
-                scores[idx] += idf_val * (numerator / denominator)
+                denominator = tf + k1 * (1 - b + b * doc_len / avgdl)
+                scores[idx] += idf_val * (tf * (k1 + 1) / denominator)
         return scores
 
 
