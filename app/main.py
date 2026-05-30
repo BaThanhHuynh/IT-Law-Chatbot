@@ -45,14 +45,39 @@ async def lifespan(app: FastAPI):
     # Startup: Warmup models and connections
     logger.info("Đang Warmup hệ thống...")
     try:
-        from app.services.rag.embeddings import get_model
+        from app.services.rag.embeddings import get_model as get_embedding_model
+        from app.services.rag.reranker import get_reranker_service
+        from app.services.rag.bm25 import get_bm25_service
         from app.services.chatbot.engine import get_llm
         from app.services.graphrag.knowledge_graph import get_knowledge_graph
         from app.services.rag.retriever import get_qdrant_client
+        import concurrent.futures
         
-        # 1. Tải Embedding Model (Nặng nhất)
-        logger.info("Đang nạp Dek21 Embedding Model vào RAM...")
-        get_model()
+        # 1. Nạp song song các Model & Chỉ mục nặng vào RAM
+        logger.info("Đang khởi tạo song song các mô hình AI và chỉ mục...")
+        
+        def load_embeddings():
+            logger.info("Đang nạp Dek21 Embedding Model vào RAM...")
+            get_embedding_model()
+            logger.info("Nạp Dek21 Embedding Model hoàn tất.")
+            
+        def load_reranker():
+            logger.info("Đang nạp Reranker Model vào RAM...")
+            get_reranker_service().get_model()
+            logger.info("Nạp Reranker Model hoàn tất.")
+            
+        def load_bm25():
+            logger.info("Đang nạp BM25 Service & chỉ mục corpus vào RAM...")
+            get_bm25_service()
+            logger.info("Nạp BM25 Service hoàn tất.")
+            
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            futures = [
+                executor.submit(load_embeddings),
+                executor.submit(load_reranker),
+                executor.submit(load_bm25)
+            ]
+            concurrent.futures.wait(futures)
         
         # 2. Tải Gemini
         logger.info("Khởi tạo cấu hình Gemini LLM...")

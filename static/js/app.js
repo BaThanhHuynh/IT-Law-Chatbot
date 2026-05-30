@@ -6,6 +6,7 @@ const API_BASE = '';  // Same origin
 let currentConversationId = null;
 let isLoading = false;
 let currentChatAbortController = null; // Abort pending chat request on conversation switch
+let conversationsCache = [];
 
 
 // ---- DOM Elements ----
@@ -90,7 +91,8 @@ async function loadConversations() {
     try {
         const result = await apiCall('/api/conversations');
         if (result.success) {
-            renderConversationList(result.data);
+            conversationsCache = result.data;
+            renderConversationList(conversationsCache);
         }
     } catch (e) {
         console.error('Failed to load conversations:', e);
@@ -255,7 +257,7 @@ async function sendMessage() {
     let displayedText = '';   // text already shown on screen
     let streamDone = false;   // SSE stream finished
     let typeAnimId = null;    // requestAnimationFrame id
-    const CHAR_DELAY = 3;     // ms per character (adjust 5-50 for speed)
+    const CHAR_DELAY = 2;     // ms per character (adjust 5-50 for speed)
     let lastTypeTime = 0;
 
     function typewriterTick(ts) {
@@ -351,9 +353,30 @@ async function sendMessage() {
                     }
 
                     if (evt.event === 'metadata') {
+                        const isNew = !currentConversationId;
                         currentConversationId = evt.conversation_id;
                         if (window.updateGraphVisualization && evt.graph_data) {
                             window.updateGraphVisualization(evt.graph_data);
+                        }
+
+                        // Local update to conversation sidebar list
+                        if (isNew) {
+                            const newConv = {
+                                id: currentConversationId,
+                                title: message.length > 50 ? message.substring(0, 47) + '...' : message,
+                                created_at: new Date().toISOString(),
+                                updated_at: new Date().toISOString()
+                            };
+                            conversationsCache = [newConv, ...conversationsCache];
+                            renderConversationList(conversationsCache);
+                        } else {
+                            const idx = conversationsCache.findIndex(c => c.id === currentConversationId);
+                            if (idx !== -1) {
+                                const updated = { ...conversationsCache[idx], updated_at: new Date().toISOString() };
+                                conversationsCache.splice(idx, 1);
+                                conversationsCache = [updated, ...conversationsCache];
+                                renderConversationList(conversationsCache);
+                            }
                         }
                     } else if (evt.event === 'text') {
                         // Show bubble on first text chunk
@@ -411,8 +434,6 @@ async function sendMessage() {
             tempDiv.innerHTML = sourcesHtml;
             bodyDiv.appendChild(tempDiv.firstElementChild);
         }
-
-        loadConversations();
 
     } catch (e) {
         cancelAnimationFrame(typeAnimId);

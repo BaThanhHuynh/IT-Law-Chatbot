@@ -44,16 +44,25 @@ def _single_query_search(query: str, top_k: int) -> list:
     """Run a single query against Qdrant. Called from thread pool."""
     try:
         query_embedding = get_embedding(query)
+        return _single_query_search_with_embedding(query_embedding.tolist(), top_k)
+    except Exception as e:
+        logger.error(f"[Error] Search failed for query '{query[:50]}': {e}")
+        return []
+
+
+def _single_query_search_with_embedding(query_embedding: list, top_k: int) -> list:
+    """Run a single query against Qdrant using a pre-computed embedding list."""
+    try:
         client = get_qdrant_client()
         response = client.query_points(
             collection_name=Config.QDRANT_COLLECTION,
-            query=query_embedding.tolist(),
+            query=query_embedding,
             limit=top_k,
             with_payload=True
         )
         return _parse_qdrant_results(response.points)
     except Exception as e:
-        logger.error(f"[Error] Search failed for query '{query[:50]}': {e}")
+        logger.error(f"[Error] Qdrant search failed: {e}")
         return []
 
 
@@ -77,11 +86,21 @@ def multi_query_search(queries: list, top_k: int = None) -> list:
     vector_candidates: dict = {}
     max_workers = min(len(queries), 8)
 
+    # Batch embed all sub-queries to avoid thread execution contention / GIL bottlenecks
+    from app.services.rag.embeddings import get_embeddings_batch
+    try:
+        query_embeddings = get_embeddings_batch(queries)
+        query_embeddings_list = [emb.tolist() for emb in query_embeddings]
+    except Exception as e:
+        logger.error(f"[Error] Batch embedding subqueries failed, falling back: {e}")
+        query_embeddings_list = [get_embedding(q).tolist() for q in queries]
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_query = {}
         for idx, q in enumerate(queries):
             limit = n_vector if idx == 0 else max(top_k, 5)
-            future_to_query[executor.submit(_single_query_search, q, limit)] = q
+            q_emb = query_embeddings_list[idx]
+            future_to_query[executor.submit(_single_query_search_with_embedding, q_emb, limit)] = q
 
         for future in as_completed(future_to_query):
             results = future.result()

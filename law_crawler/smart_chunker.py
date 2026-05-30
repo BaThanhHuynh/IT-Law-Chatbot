@@ -58,8 +58,8 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ── Cấu hình mặc định ────────────────────────────────────────────────────────
-CHUNK_SIZE    = 400    # ký tự tối đa mỗi chunk (PhoBERT max ~512 ký tự VN)
-CHUNK_OVERLAP = 50     # ký tự overlap giữa chunk liền kề (Tier 4)
+CHUNK_SIZE    = 800    # ký tự tối đa mỗi chunk (PhoBERT max ~512 ký tự VN)
+CHUNK_OVERLAP = 100     # ký tự overlap giữa chunk liền kề (Tier 4)
 EXCEL_MAX_LEN = 32767  # giới hạn ký tự của 1 cell Excel
 MIN_USEFUL_LEN = 20     # chunk ngắn hơn mức này là rác, sẽ bị lọc bỏ
 
@@ -836,9 +836,9 @@ Ví dụ:
     args = parser.parse_args()
 
     # ── CẬP NHẬT CẤU HÌNH TOÀN CỤC ─────────────────────────────────────
-    import smart_chunker as _m
-    _m.CHUNK_SIZE    = args.chunk_size
-    _m.CHUNK_OVERLAP = args.overlap
+    import __main__
+    __main__.CHUNK_SIZE    = args.chunk_size
+    __main__.CHUNK_OVERLAP = args.overlap
 
     # ── TỰ ĐỘNG DETECT FOLDER RAW (không cần gõ --docx_folder) ────────
     if not args.docx_folder:

@@ -247,7 +247,23 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         }
 
     else:
-        intent = classify_intent(query)
+        raw_history = get_conversation_history(conversation_id, limit=4)
+        history_context = ""
+        for msg in raw_history:
+            role_name = "User" if msg["role"] == "user" else "Bot"
+            history_context += f"{role_name}: {msg['content']}\n"
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            future_intent = executor.submit(classify_intent, query)
+            future_rewrite = executor.submit(rewrite_query, query, history_context)
+            future_entities = executor.submit(extract_entities, query)
+            future_sub_queries = executor.submit(generate_sub_queries, query)
+            
+            intent = future_intent.result()
+            rewritten_query = future_rewrite.result()
+            extracted_entities = future_entities.result()
+            sub_queries = future_sub_queries.result()
+            
         logger.info(f"[{conversation_id}] Query classified as: {intent}")
 
     if intent == "CHATCHIT":
@@ -288,23 +304,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         }
 
     # ═══ LUAT MODE: Full pipeline ═══
-
-    # 3.1 Rewrite + entity + sub-queries chạy SONG SONG.
-    # Cả 3 đều là LLM call độc lập trên câu hỏi gốc nên gộp vào 1 thread pool,
-    # tránh để rewrite chạy tuần tự trước (tiết kiệm ~1 round-trip mạng).
-    raw_history = get_conversation_history(conversation_id, limit=4)
-    history_context = ""
-    for msg in raw_history:
-        role_name = "User" if msg["role"] == "user" else "Bot"
-        history_context += f"{role_name}: {msg['content']}\n"
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        future_rewrite = executor.submit(rewrite_query, query, history_context)
-        future_entities = executor.submit(extract_entities, query)
-        future_sub_queries = executor.submit(generate_sub_queries, query)
-        rewritten_query = future_rewrite.result()
-        extracted_entities = future_entities.result()
-        sub_queries = future_sub_queries.result()
+    # Cả 4 LLM call đã được chạy song song phía trên.
 
     if rewritten_query != query:
         logger.info(f"[{conversation_id}] Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
@@ -596,18 +596,11 @@ def create_conversation(first_query: str = "") -> str:
     conv_id = str(uuid.uuid4())
     title = "Cuộc hội thoại mới"
 
-    # Try to generate a smart title
+    # Gộp/Tối ưu: Tránh cuộc gọi LLM phụ gây lag thời gian phản hồi đầu tiên.
+    # Lấy trực tiếp câu hỏi làm tiêu đề (cắt ngắn nếu quá dài).
     if first_query:
-        try:
-            model = get_llm()
-            title_prompt = TITLE_PROMPT.format(query=first_query)
-            response = model.models.generate_content(
-                model="gemini-3.1-flash-lite",
-                contents=title_prompt
-            )
-            title = response.text.strip()[:100]
-        except Exception:
-            title = first_query[:50] + "..." if len(first_query) > 50 else first_query
+        first_line = first_query.strip().split('\n')[0]
+        title = first_line[:50] + "..." if len(first_line) > 50 else first_line
 
     now = datetime.now().isoformat()
     
@@ -824,7 +817,23 @@ def generate_response_stream(query: str, conversation_id: str = None):
         return
 
     if intent == "LUAT":
-        intent = classify_intent(query)
+        raw_history = get_conversation_history(conversation_id, limit=4)
+        history_context = ""
+        for msg in raw_history:
+            role_name = "User" if msg["role"] == "user" else "Bot"
+            history_context += f"{role_name}: {msg['content']}\n"
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            future_intent = executor.submit(classify_intent, query)
+            future_rewrite = executor.submit(rewrite_query, query, history_context)
+            future_entities = executor.submit(extract_entities, query)
+            future_sub_queries = executor.submit(generate_sub_queries, query)
+            
+            intent = future_intent.result()
+            rewritten_query = future_rewrite.result()
+            extracted_entities = future_entities.result()
+            sub_queries = future_sub_queries.result()
+            
         logger.info(f"[{conversation_id}] (Stream) Query classified as: {intent}")
 
     if intent == "CHATCHIT":
@@ -863,20 +872,7 @@ def generate_response_stream(query: str, conversation_id: str = None):
         return
 
     # ═══ LUAT MODE: Full pipeline ═══
-    # Rewrite + entity + sub-queries chạy SONG SONG (xem ghi chú ở generate_response).
-    raw_history = get_conversation_history(conversation_id, limit=4)
-    history_context = ""
-    for msg in raw_history:
-        role_name = "User" if msg["role"] == "user" else "Bot"
-        history_context += f"{role_name}: {msg['content']}\n"
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        future_rewrite = executor.submit(rewrite_query, query, history_context)
-        future_entities = executor.submit(extract_entities, query)
-        future_sub_queries = executor.submit(generate_sub_queries, query)
-        rewritten_query = future_rewrite.result()
-        extracted_entities = future_entities.result()
-        sub_queries = future_sub_queries.result()
+    # Cả 4 LLM call đã được chạy song song phía trên.
 
     if rewritten_query != query:
         logger.info(f"[{conversation_id}] (Stream) Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")

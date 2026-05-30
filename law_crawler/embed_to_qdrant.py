@@ -158,8 +158,8 @@ def search_demo(client: QdrantClient, collection_name: str,
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Embed law_chunks.jsonl vào Qdrant")
-    parser.add_argument("--input",      "-i", default="data/law_chunks.jsonl")
+    parser = argparse.ArgumentParser(description="Embed law_chunks_hier.jsonl vào Qdrant")
+    parser.add_argument("--input",      "-i", default="data/law_chunks_hier.jsonl")
     parser.add_argument("--model",      "-m", default=MODEL_NAME, help="Model path hoặc HF ID")
     parser.add_argument("--device",     "-d", default="cpu")
     parser.add_argument("--batch_size", "-b", type=int, default=BATCH_SIZE)

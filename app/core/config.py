@@ -44,10 +44,10 @@ class Config:
     RERANKER_MODEL = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 
     # BM25 Corpus Path
-    BM25_CORPUS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "law_crawler", "data", "law_chunks.jsonl")
+    BM25_CORPUS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "law_crawler", "data", "law_chunks_hier.jsonl")
 
     # RAG settings
-    CHUNK_SIZE = 500
+    CHUNK_SIZE = 800
     CHUNK_OVERLAP = 100
     TOP_K_RESULTS = 5
     # Max candidates fed into the cross-encoder reranker. Each candidate is one

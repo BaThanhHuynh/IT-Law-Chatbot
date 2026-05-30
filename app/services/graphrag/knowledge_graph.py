@@ -106,13 +106,20 @@ class KnowledgeGraph:
         if not results:
             return []
 
+        # Batch embed all candidate entity texts to optimize performance
+        from app.services.rag.embeddings import get_embeddings_batch
+        texts_to_embed = [f"{r.get('name', '')}. {r.get('description', '')}" for r in results]
+        try:
+            embeddings = get_embeddings_batch(texts_to_embed)
+        except Exception as e:
+            logger.warning(f"[KG Search] Batch embedding failed, falling back to sequential: {e}")
+            from app.services.rag.embeddings import get_embedding
+            embeddings = [get_embedding(t) for t in texts_to_embed]
+
         scored = []
-        for r in results:
+        for r, entity_embedding in zip(results, embeddings):
             labels = [l for l in r.get("labels", []) if l != "Entity"]
             entity_type = labels[0] if labels else "UNKNOWN"
-            
-            entity_text = f"{r.get('name', '')}. {r.get('description', '')}"
-            entity_embedding = get_embedding(entity_text)
             sim_score = cosine_similarity(query_embedding, entity_embedding)
             
             if sim_score < min_score:
@@ -325,26 +332,55 @@ def _score_graph_chunks(query_embedding, candidates: list) -> list:
     Returns:
         Filtered and scored list of chunk dicts with 'score' set to real similarity
     """
-    from app.services.rag.embeddings import get_embedding, cosine_similarity
+    from app.services.rag.embeddings import get_embeddings_batch, cosine_similarity
 
-    scored = []
+    if not candidates:
+        return []
+
+    valid_candidates = []
+    texts_to_embed = []
     for chunk in candidates:
         content = chunk.get("content", "")
-        if not content:
-            continue
-        try:
-            # Use at most 500 chars for scoring to keep it fast
-            chunk_emb = get_embedding(content[:500])
+        if content:
+            valid_candidates.append(chunk)
+            texts_to_embed.append(content[:500])
+
+    if not texts_to_embed:
+        return []
+
+    try:
+        # Batch embed all candidate texts to maximize GPU/CPU vectorization
+        embeddings = get_embeddings_batch(texts_to_embed)
+        
+        scored = []
+        for chunk, chunk_emb in zip(valid_candidates, embeddings):
             sim = cosine_similarity(query_embedding, chunk_emb)
             if sim >= MIN_GRAPH_INJECT_SCORE:
                 chunk["score"] = round(sim, 3)
                 scored.append(chunk)
-        except Exception as e:
-            logger.warning(f"[GraphExpand] Scoring failed for chunk: {e}")
-            continue
-
-    scored.sort(key=lambda x: x["score"], reverse=True)
-    return scored
+        
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored
+    except Exception as e:
+        logger.warning(f"[GraphExpand] Batch scoring failed: {e}")
+        # Fallback to sequential if batch fails
+        from app.services.rag.embeddings import get_embedding
+        scored = []
+        for chunk in candidates:
+            content = chunk.get("content", "")
+            if not content:
+                continue
+            try:
+                chunk_emb = get_embedding(content[:500])
+                sim = cosine_similarity(query_embedding, chunk_emb)
+                if sim >= MIN_GRAPH_INJECT_SCORE:
+                    chunk["score"] = round(sim, 3)
+                    scored.append(chunk)
+            except Exception as ex:
+                logger.warning(f"[GraphExpand] Fallback scoring failed: {ex}")
+                continue
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored
 
 
 def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str = "", top_extra: int = 2) -> list:
