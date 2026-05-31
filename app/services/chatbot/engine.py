@@ -55,7 +55,7 @@ def classify_intent(query: str) -> str:
         model = get_llm()
         prompt = INTENT_CLASSIFICATION_PROMPT.format(query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=Config.GEMINI_MODEL,
             contents=prompt
         )
         intent = response.text.strip().upper()
@@ -74,7 +74,7 @@ def rewrite_query(query: str, history_context: str) -> str:
         model = get_llm()
         prompt = QUERY_REWRITE_PROMPT.format(history_context=history_context, query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=Config.GEMINI_MODEL,
             contents=prompt
         )
         rewritten = response.text.strip()
@@ -94,7 +94,7 @@ def generate_title(query: str) -> str:
         model = get_llm()
         prompt = TITLE_PROMPT.format(query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=Config.GEMINI_MODEL,
             contents=prompt
         )
         try:
@@ -114,7 +114,7 @@ def extract_entities(query: str) -> str:
         model = get_llm()
         prompt = ENTITY_EXTRACTION_PROMPT.format(query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=Config.GEMINI_MODEL,
             contents=prompt
         )
         try:
@@ -141,7 +141,7 @@ def generate_sub_queries(query: str, num_queries: int = 3) -> list:
         model = get_llm()
         prompt = MULTI_QUERY_PROMPT.format(query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=Config.GEMINI_MODEL,
             contents=prompt
         )
         
@@ -222,7 +222,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             try:
                 model = get_llm()
                 summary_response = model.models.generate_content(
-                    model="gemini-3.1-flash-lite",
+                    model=Config.GEMINI_MODEL,
                     contents=f"Hãy tóm tắt nội dung sau thành 3-5 ý chính, mỗi ý 1-2 câu ngắn gọn, dùng bullet point:\n\n{last_bot_msg[:3000]}",
                     config=types.GenerateContentConfig(
                         system_instruction=(
@@ -245,25 +245,33 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             "sources": [],
             "graph_data": {"nodes": [], "edges": []},
         }
-
     else:
         # Fetch history once (limit=6) and reuse for both the rewrite context
         # and the final chat history — avoids a second Qdrant scroll round-trip.
         history = get_conversation_history(conversation_id, limit=6)
-        raw_history = history[-4:]
+        
+        # Exclude the current user message (last element) from history context
+        prev_history = history[:-1]
+        
+        # Use the last 2 history messages for context
+        raw_history = prev_history[-2:]
         history_context = ""
         for msg in raw_history:
             role_name = "User" if msg["role"] == "user" else "Bot"
             history_context += f"{role_name}: {msg['content']}\n"
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            future_intent = executor.submit(classify_intent, query)
-            future_rewrite = executor.submit(rewrite_query, query, history_context)
-            future_entities = executor.submit(extract_entities, query)
-            future_sub_queries = executor.submit(generate_sub_queries, query)
+        # If we have history, rewrite the query first to get the correct context for classification & extraction
+        if history_context.strip():
+            rewritten_query = rewrite_query(query, history_context)
+        else:
+            rewritten_query = query
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_intent = executor.submit(classify_intent, rewritten_query)
+            future_entities = executor.submit(extract_entities, rewritten_query)
+            future_sub_queries = executor.submit(generate_sub_queries, rewritten_query)
 
             intent = future_intent.result()
-            rewritten_query = future_rewrite.result()
             extracted_entities = future_entities.result()
             sub_queries = future_sub_queries.result()
 
@@ -286,7 +294,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         try:
             model = get_llm()
             chatchit_response = model.models.generate_content(
-                model="gemini-3.1-flash-lite",
+                model=Config.GEMINI_MODEL,
                 contents=query,
                 config=types.GenerateContentConfig(
                     system_instruction=chatchit_system,
@@ -385,7 +393,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         else:
             model = get_llm()
             chat = model.chats.create(
-                model="gemini-3.1-flash-lite",
+                model=Config.GEMINI_MODEL,
                 history=chat_history,
                 config=types.GenerateContentConfig(
                     system_instruction=system_prompt,
@@ -789,7 +797,7 @@ def generate_response_stream(query: str, conversation_id: str = None):
             try:
                 model = get_llm()
                 summary_response = model.models.generate_content_stream(
-                    model="gemini-3.1-flash-lite",
+                    model=Config.GEMINI_MODEL,
                     contents=f"Hãy tóm tắt nội dung sau thành 3-5 ý chính, mỗi ý 1-2 câu ngắn gọn, dùng bullet point:\n\n{last_bot_msg[:3000]}",
                     config=types.GenerateContentConfig(
                         system_instruction=(
@@ -822,20 +830,29 @@ def generate_response_stream(query: str, conversation_id: str = None):
         # Fetch history once (limit=6) and reuse for both the rewrite context
         # and the final chat history — avoids a second Qdrant scroll round-trip.
         history = get_conversation_history(conversation_id, limit=6)
-        raw_history = history[-4:]
+        
+        # Exclude the current user message (last element) from history context
+        prev_history = history[:-1]
+        
+        # Use the last 2 history messages for context
+        raw_history = prev_history[-2:]
         history_context = ""
         for msg in raw_history:
             role_name = "User" if msg["role"] == "user" else "Bot"
             history_context += f"{role_name}: {msg['content']}\n"
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            future_intent = executor.submit(classify_intent, query)
-            future_rewrite = executor.submit(rewrite_query, query, history_context)
-            future_entities = executor.submit(extract_entities, query)
-            future_sub_queries = executor.submit(generate_sub_queries, query)
+        # If we have history, rewrite the query first to get the correct context for classification & extraction
+        if history_context.strip():
+            rewritten_query = rewrite_query(query, history_context)
+        else:
+            rewritten_query = query
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+            future_intent = executor.submit(classify_intent, rewritten_query)
+            future_entities = executor.submit(extract_entities, rewritten_query)
+            future_sub_queries = executor.submit(generate_sub_queries, rewritten_query)
 
             intent = future_intent.result()
-            rewritten_query = future_rewrite.result()
             extracted_entities = future_entities.result()
             sub_queries = future_sub_queries.result()
 
@@ -854,7 +871,7 @@ def generate_response_stream(query: str, conversation_id: str = None):
         try:
             model = get_llm()
             chatchit_response = model.models.generate_content_stream(
-                model="gemini-3.1-flash-lite",
+                model=Config.GEMINI_MODEL,
                 contents=query,
                 config=types.GenerateContentConfig(
                     system_instruction=chatchit_system,
@@ -956,7 +973,7 @@ def generate_response_stream(query: str, conversation_id: str = None):
         else:
             model = get_llm()
             chat = model.chats.create(
-                model="gemini-3.1-flash-lite",
+                model=Config.GEMINI_MODEL,
                 history=chat_history,
                 config=types.GenerateContentConfig(
                     system_instruction=system_prompt,

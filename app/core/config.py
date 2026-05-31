@@ -7,6 +7,7 @@ load_dotenv()
 class Config:
     # Gemini API
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL = os.getenv("GEMINI_MODEL", "")
 
     # Qdrant Database Service
     QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")

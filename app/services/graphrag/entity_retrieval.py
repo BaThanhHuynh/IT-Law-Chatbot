@@ -106,7 +106,7 @@ def extract_entities_structured(query: str) -> list:
         model = get_llm()
         prompt = ENTITY_EXTRACTION_STRUCTURED_PROMPT.format(query=query)
         response = model.models.generate_content(
-            model="gemini-3.1-flash-lite",
+            model=Config.GEMINI_MODEL,
             contents=prompt,
         )
         text = response.text.strip()

@@ -255,6 +255,9 @@ async function sendMessage() {
     // SSE pushes raw text into this queue; the animation loop drains it char-by-char
     let typeQueue = '';       // pending chars not yet displayed
     let displayedText = '';   // text already shown on screen
+    let rawReceivedText = '';
+    let queuedAnswerLength = 0;
+    let thinkingEnded = false;
     let streamDone = false;   // SSE stream finished
     let typeAnimId = null;    // requestAnimationFrame id
     const CHAR_DELAY = 2;     // ms per character (adjust 5-50 for speed)
@@ -277,9 +280,8 @@ async function sendMessage() {
             displayedText += chunk;
             lastTypeTime = ts;
 
-            // Re-render with cursor
-            contentDiv.innerHTML = formatMessageContent(displayedText) +
-                '<span class="streaming-cursor"></span>';
+            // Re-render
+            contentDiv.innerHTML = formatMessageContent(displayedText, true);
             scrollToBottom();
         }
 
@@ -379,10 +381,32 @@ async function sendMessage() {
                             }
                         }
                     } else if (evt.event === 'text') {
-                        // Show bubble on first text chunk
+                        rawReceivedText += evt.text;
                         showMsgAndRemoveTyping();
-                        // Feed raw text into the typewriter queue
-                        typeQueue += evt.text;
+
+                        const thinkingEndIdx = rawReceivedText.indexOf('</thinking>');
+                        if (thinkingEndIdx === -1) {
+                            if (rawReceivedText.includes('<thinking>') || '<thinking>'.startsWith(rawReceivedText.trim())) {
+                                displayedText = rawReceivedText;
+                                contentDiv.innerHTML = formatMessageContent(displayedText, true);
+                                scrollToBottom();
+                            } else {
+                                const newChars = rawReceivedText.substring(queuedAnswerLength);
+                                typeQueue += newChars;
+                                queuedAnswerLength = rawReceivedText.length;
+                            }
+                        } else {
+                            if (!thinkingEnded) {
+                                thinkingEnded = true;
+                                displayedText = rawReceivedText.substring(0, thinkingEndIdx + 11);
+                                contentDiv.innerHTML = formatMessageContent(displayedText, true);
+                                scrollToBottom();
+                            }
+                            const totalAnswer = rawReceivedText.substring(thinkingEndIdx + 11);
+                            const newAnswerChars = totalAnswer.substring(queuedAnswerLength);
+                            typeQueue += newAnswerChars;
+                            queuedAnswerLength = totalAnswer.length;
+                        }
                     } else if (evt.event === 'sources') {
                         sources = evt.sources;
                     } else if (evt.event === 'error') {
@@ -558,8 +582,7 @@ async function typeWriterHTML(el, htmlString, speed = 15) {
             if (cursor > htmlString.length) cursor = htmlString.length;
         }
 
-        // Thêm con trỏ nhấp nháy giả
-        el.innerHTML = htmlString.substring(0, cursor) + '<span class="streaming-cursor"></span>';
+        el.innerHTML = htmlString.substring(0, cursor);
         scrollToBottom();
         await new Promise(r => setTimeout(r, frameDelay));
     }
@@ -585,34 +608,74 @@ function showTypingIndicator() {
     return div;
 }
 
-function formatMessageContent(content) {
+function formatMessageContent(content, isStreaming = false) {
     if (!content) return '';
 
+    let thinkingContent = '';
+    let answerContent = '';
+    let isThinking = false;
+    let isAnswering = false;
+
+    const thinkingStartIdx = content.indexOf('<thinking>');
+    const thinkingEndIdx = content.indexOf('</thinking>');
+    const answerStartIdx = content.indexOf('<answer>');
+    const answerEndIdx = content.indexOf('</answer>');
+
+    if (thinkingStartIdx !== -1) {
+        if (thinkingEndIdx !== -1) {
+            thinkingContent = content.substring(thinkingStartIdx + 10, thinkingEndIdx).trim();
+            if (answerStartIdx !== -1) {
+                if (answerEndIdx !== -1) {
+                    answerContent = content.substring(answerStartIdx + 8, answerEndIdx).trim();
+                } else {
+                    answerContent = content.substring(answerStartIdx + 8).trim();
+                    isAnswering = true;
+                }
+            } else {
+                const remaining = content.substring(thinkingEndIdx + 11).trim();
+                if (remaining.startsWith('<')) {
+                    isAnswering = true;
+                } else if (remaining) {
+                    answerContent = remaining;
+                    isAnswering = true;
+                }
+            }
+        } else {
+            thinkingContent = content.substring(thinkingStartIdx + 10).trim();
+            isThinking = true;
+        }
+    } else {
+        const cleanContent = content.trim();
+        if (cleanContent.startsWith('<') && !cleanContent.includes('>') && '<thinking>'.startsWith(cleanContent)) {
+            isThinking = true;
+        } else {
+            answerContent = content;
+            isAnswering = isStreaming;
+        }
+    }
+
+    const cleanTrailingTag = (text) => {
+        return text.replace(/<[a-zA-Z\/]*$/g, '');
+    };
+
+    thinkingContent = cleanTrailingTag(thinkingContent);
+    answerContent = cleanTrailingTag(answerContent);
+
     let thinkingHtml = '';
-    const thinkingMatch = content.match(/<thinking>([\s\S]*?)<\/thinking>/);
-    if (thinkingMatch) {
-        let thinkingContent = escapeHtml(thinkingMatch[1].trim());
-        // Simple markdown for thinking block
-        thinkingContent = thinkingContent.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        thinkingContent = thinkingContent.replace(/\n/g, '<br>');
+    if (thinkingContent || isThinking) {
+        let formattedThinking = escapeHtml(thinkingContent);
+        formattedThinking = formattedThinking.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        formattedThinking = formattedThinking.replace(/\n/g, '<br>');
 
         thinkingHtml = `
-            <details class="thinking-block">
+            <details class="thinking-block" ${isThinking ? 'open' : ''}>
                 <summary>Quá trình AI suy luận (Nhấp để mở)</summary>
-                <div class="thinking-content">${thinkingContent}</div>
+                <div class="thinking-content">${formattedThinking}</div>
             </details>
         `;
-        content = content.replace(/<thinking>[\s\S]*?<\/thinking>/, '');
     }
 
-    // Extract <answer> block if any
-    const answerMatch = content.match(/<answer>([\s\S]*?)<\/answer>/);
-    if (answerMatch) {
-        content = answerMatch[1].trim();
-    }
-
-    // Basic markdown-like formatting
-    let html = escapeHtml(content);
+    let html = escapeHtml(answerContent);
 
     // Bold: **text**
     html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
@@ -629,6 +692,8 @@ function formatMessageContent(content) {
 
     // Line breaks
     html = html.replace(/\n/g, '<br>');
+
+
 
     return thinkingHtml + html;
 }
