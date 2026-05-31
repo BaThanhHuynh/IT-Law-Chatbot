@@ -384,7 +384,7 @@ def _score_graph_chunks(query_embedding, candidates: list) -> list:
         return scored
 
 
-def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str = "", top_extra: int = 2) -> list:
+def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str = "", top_k: int = 5, top_extra: int = 2) -> list:
     """
     Graph Re-ranking: sau khi RAG tìm được chunks, duyệt đồ thị để tìm các điều luật
     liên quan (tham chiếu, liên kết) và bổ sung vào kết quả.
@@ -403,10 +403,10 @@ def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str = "
     from qdrant_client.models import Filter, FieldCondition, MatchAny
 
     # ── Bước 1: Xây dựng entity_id ĐÚNG FORMAT từ RAG results ────────
-    # Chỉ dùng top-3 vector results để tránh quá nhiều hướng expand
+    # Dùng top_k vector results để mở rộng hướng expand phù hợp với số kết quả tìm kiếm
     article_entity_ids = []
     source_so_hieus = set()  # Track which laws we already have
-    for vr in vector_results[:3]:
+    for vr in vector_results[:top_k]:
         dieu_so = vr.get("dieu_so", "")
         so_hieu = vr.get("so_hieu", "")
         if dieu_so and so_hieu:
@@ -419,7 +419,7 @@ def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str = "
         logger.info(f"[GraphExpand] No valid entity_ids from RAG results, skipping")
         return vector_results
 
-    logger.info(f"[GraphExpand] Built entity_ids from RAG top-3: {article_entity_ids}")
+    logger.info(f"[GraphExpand] Built entity_ids from RAG top-{top_k}: {article_entity_ids}")
 
     # Pre-compute query embedding once for scoring all candidates
     query_embedding = None
@@ -572,17 +572,17 @@ def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str = "
 
 # ── Thread-safe wrappers: preserve the original try/except fallbacks so a
 #    failure in one parallel branch never breaks the others. ────────────────
-def _safe_search_entities(kg: "KnowledgeGraph", term: str) -> list:
+def _safe_search_entities(kg: "KnowledgeGraph", term: str, top_k: int = 5) -> list:
     try:
-        return kg.search_entities(term, top_k=3)
+        return kg.search_entities(term, top_k=top_k)
     except Exception as e:
         logger.error(f"[KG Error] Entity search failed: {e}")
         return []
 
 
-def _safe_expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str) -> list:
+def _safe_expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str, top_k: int = 5) -> list:
     try:
-        return _expand_via_graph(vector_results, kg, query=query, top_extra=2)
+        return _expand_via_graph(vector_results, kg, query=query, top_k=top_k, top_extra=2)
     except Exception as e:
         logger.warning(f"[GraphExpand] Skipped due to error: {e}")
         return vector_results
@@ -650,7 +650,7 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
     graph_search_term = entities if entities else query
     with ThreadPoolExecutor(max_workers=2) as ex:
         f_vector = ex.submit(multi_query_search, all_queries, top_k)
-        f_entities = ex.submit(_safe_search_entities, kg, graph_search_term)
+        f_entities = ex.submit(_safe_search_entities, kg, graph_search_term, top_k)
         vector_results = f_vector.result()
         kg_results = f_entities.result()
 
@@ -660,11 +660,11 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
     #   2. Static queries trong query_expansion.py (trỏ đúng Điều/Khoản theo chủ đề)
     #   3. _expand_via_graph() bên dưới (bổ sung điều luật liên quan từ graph)
 
-    # ── 2. Build matched entity ids (KG hits + RAG top-3) ─────────────
+    # ── 2. Build matched entity ids (KG hits + RAG top-k) ─────────────
     # Computed from the front of vector_results, so it is unaffected by the
     # graph-expanded chunks that _expand_via_graph appends to the tail.
     matched_entity_ids = [r["entity"]["entity_id"] for r in kg_results]
-    for vr in vector_results[:3]:
+    for vr in vector_results[:top_k]:
         so_hieu = vr.get("so_hieu", "")
         dieu_so = vr.get("dieu_so", "")
         if so_hieu and dieu_so:
@@ -680,7 +680,7 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
     graph_context = ""
     graph_data = {"nodes": [], "edges": []}
     with ThreadPoolExecutor(max_workers=3) as ex:
-        f_expand = ex.submit(_safe_expand_via_graph, vector_results, kg, query)
+        f_expand = ex.submit(_safe_expand_via_graph, vector_results, kg, query, top_k)
         f_context = ex.submit(_safe_graph_context, kg, matched_entity_ids) if matched_entity_ids else None
         f_viz = ex.submit(_safe_graph_viz, kg, matched_entity_ids) if matched_entity_ids else None
         vector_results = f_expand.result()

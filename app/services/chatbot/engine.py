@@ -284,10 +284,10 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         graph_data = {"nodes": [], "edges": []}
 
         chatchit_system = (
-            "Bạn là trợ lý tư vấn pháp luật CNTT. "
-            "Nếu người dùng chào hỏi mở đầu, hãy chào lại thân thiện và hỏi xem họ cần tư vấn vấn đề pháp lý gì. "
-            "Nếu người dùng cảm ơn hoặc tạm biệt, hãy đáp lại lịch sự. "
-            "Yêu cầu chung: Trả lời THẬT NGẮN GỌN (tối đa 2 câu), không liệt kê, không giải thích dài dòng."
+            "Bạn là trợ lý tư vấn pháp luật CNTT Việt Nam.\n"
+            "Nhiệm vụ của bạn chỉ là chào hỏi, cảm ơn, xã giao và tư vấn các vấn đề liên quan đến pháp luật hoặc công nghệ thông tin.\n"
+            "QUAN TRỌNG: Nếu người dùng hỏi bất kỳ câu hỏi nào ngoài lề (như kiến thức phổ thông, toán học, dịch thuật, khoa học, chính trị, địa lý...) không liên quan đến pháp luật hoặc CNTT, hãy lịch sự từ chối trả lời và hướng người dùng quay lại chủ đề tư vấn luật CNTT.\n"
+            "Yêu cầu chung: Trả lời THẬT NGĂN GỌN (tối đa 2 câu), không liệt kê, không giải thích dài dòng."
         )
 
         # Gọi LLM trực tiếp (không tạo chat session, không load history đầy đủ)
@@ -428,6 +428,8 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
 
     # Gather all unique articles from vector search results
     for r in search_results.get("vector_results", []):
+        if r.get("score", 0) < 0.35:
+            continue
         doc = r.get("doc_title", "")
         article_key = (doc, r.get("article", ""))
         if article_key not in seen_articles:
@@ -465,7 +467,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
     filtered_candidates = _filter_sources_by_citations(answer, all_candidates)
 
     # Apply diversity-aware top-k selection on filtered candidates
-    MAX_SOURCES = 4
+    MAX_SOURCES = Config.TOP_K_RESULTS
     sources = []
     seen_doc_titles = set()
     seen_articles_final = set()
@@ -1012,6 +1014,8 @@ def generate_response_stream(query: str, conversation_id: str = None):
     seen_articles = set()
 
     for r in search_results.get("vector_results", []):
+        if r.get("score", 0) < 0.35:
+            continue
         doc = r.get("doc_title", "")
         article_key = (doc, r.get("article", ""))
         if article_key not in seen_articles:
@@ -1045,7 +1049,7 @@ def generate_response_stream(query: str, conversation_id: str = None):
 
     filtered_candidates = _filter_sources_by_citations(full_answer, all_candidates)
 
-    MAX_SOURCES = 4
+    MAX_SOURCES = Config.TOP_K_RESULTS
     sources = []
     seen_doc_titles = set()
     seen_articles_final = set()
