@@ -10,9 +10,195 @@ from google.genai import types
 
 from app.core.config import Config
 from app.core.logger import logger
-from app.services.rag.retriever import get_context_from_results
+from app.services.rag.retriever import get_context_from_results, fetch_specific_article
 from app.services.graphrag.knowledge_graph import hybrid_search
 from app.services.chatbot.prompts import SYSTEM_PROMPT, RAG_PROMPT_TEMPLATE, TITLE_PROMPT, INTENT_CLASSIFICATION_PROMPT, ENTITY_EXTRACTION_PROMPT, MULTI_QUERY_PROMPT, QUERY_REWRITE_PROMPT
+
+
+# ── Article-Lookup Detection ─────────────────────────────────────────────────
+# Maps user shorthand ("Luật ANM", "NĐ 15/2020") to exact `ten_van_ban` in Qdrant.
+# Used to bypass the semantic search gap for queries like "Điều 15 Luật An ninh mạng 2018".
+
+import re as _re_article
+
+_RE_ARTICLE_LOOKUP = _re_article.compile(
+    r'[Đđ]i[eề]u\s+(\d+)'
+    r'(?:\s+(?:của\s+)?)?'
+    r'(?:(?:[Ll]uật|[Nn]ghị\s*[Đđ]ịnh|NĐ)\s+)?'
+    r'(.*)',
+    _re_article.IGNORECASE
+)
+
+# Keyword → ten_van_ban mapping for fuzzy matching user queries to Qdrant metadata
+_DOC_KEYWORDS = [
+    # (keywords_set, ten_van_ban, priority — higher = more specific)
+    ({"an ninh mạng", "anm"}, [
+        ("2025", "Luật An ninh mạng 2025"),
+        ("2018", "Luật An ninh mạng 2018"),
+        (None,   "Luật An ninh mạng 2018"),  # default
+    ]),
+    ({"an toàn thông tin", "attt", "atttm"}, [
+        (None, "Luật An toàn thông tin mạng 2015"),
+    ]),
+    ({"công nghệ thông tin", "cntt"}, [
+        (None, "Luật Công nghệ thông tin 2006"),
+    ]),
+    ({"giao dịch điện tử", "gddt", "gdđt"}, [
+        (None, "Luật Giao dịch điện tử 2023"),
+    ]),
+    ({"viễn thông"}, [
+        (None, "Luật Viễn thông 2023"),
+    ]),
+    ({"sở hữu trí tuệ", "shtt"}, [
+        (None, "Luật Sở hữu trí tuệ 2005"),
+    ]),
+    ({"dữ liệu cá nhân", "bảo vệ dữ liệu cá nhân", "bvdlcn"}, [
+        (None, "Luật Bảo vệ dữ liệu cá nhân 2025"),
+    ]),
+    ({"dữ liệu"}, [
+        ("2024", "Luật Dữ liệu 2024"),
+        (None,   "Luật Dữ liệu 2024"),
+    ]),
+    ({"công nghiệp công nghệ số", "cnts"}, [
+        (None, "Luật Công nghiệp công nghệ số 2025"),
+    ]),
+    ({"bảo vệ quyền lợi người tiêu dùng", "bvqlntd", "người tiêu dùng"}, [
+        (None, "Luật Bảo vệ quyền lợi người tiêu dùng 2023"),
+    ]),
+    # Nghị định — match by số hiệu patterns
+    ({"15/2020", "nd 15", "nđ 15", "nghị định 15"}, [
+        (None, "Nghị định xử phạt vi phạm hành chính lĩnh vực bưu chính, viễn thông, CNTT"),
+    ]),
+    ({"53/2022", "nd 53", "nđ 53", "nghị định 53"}, [
+        (None, "Nghị định quy định chi tiết Luật An ninh mạng 2018"),
+    ]),
+    ({"13/2023", "nd 13", "nđ 13", "nghị định 13"}, [
+        (None, "Nghị định về bảo vệ dữ liệu cá nhân"),
+    ]),
+    ({"130/2018", "nd 130", "nđ 130", "nghị định 130"}, [
+        (None, "Nghị định về chữ ký số và dịch vụ tin cậy"),
+    ]),
+    ({"71/2007", "nd 71", "nđ 71", "nghị định 71"}, [
+        (None, "Nghị định về công nghiệp công nghệ thông tin"),
+    ]),
+    ({"85/2016", "nd 85", "nđ 85", "nghị định 85"}, [
+        (None, "Nghị định về bảo đảm an toàn hệ thống thông tin theo cấp độ"),
+    ]),
+    ({"147/2024", "nd 147", "nđ 147", "nghị định 147"}, [
+        (None, "Nghị định quản lý, cung cấp, sử dụng dịch vụ Internet và thông tin trên mạng"),
+    ]),
+    ({"52/2013", "nghị định 52/2013"}, [
+        (None, "Nghị định về thương mại điện tử"),
+    ]),
+    ({"17/2023", "nd 17", "nđ 17", "nghị định 17"}, [
+        (None, "Nghị định quy định chi tiết Luật SHTT về quyền tác giả, phần mềm máy tính"),
+    ]),
+    ({"52/2024", "nghị định 52/2024"}, [
+        (None, "Nghị định về thanh toán không dùng tiền mặt"),
+    ]),
+    ({"211/2025", "nd 211", "nđ 211", "nghị định 211"}, [
+        (None, "Nghị định về hoạt động mật mã dân sự và sửa đổi NĐ 15/2020"),
+    ]),
+]
+
+
+def _detect_article_lookup(query: str) -> tuple:
+    """
+    Detect queries asking for a specific article by number (e.g., "Điều 15 Luật ANM 2018").
+
+    Returns:
+        (dieu_so, doc_title) if detected, else (None, None)
+    """
+    m = _RE_ARTICLE_LOOKUP.search(query)
+    if not m:
+        return None, None
+
+    dieu_so = m.group(1)
+    remainder = m.group(2).strip().rstrip('?!., ')
+    query_lower = query.lower()
+
+    # Try to match remainder + full query against known document keywords
+    remainder_lower = remainder.lower()
+    combined = f"{remainder_lower} {query_lower}"
+
+    for keywords, year_mappings in _DOC_KEYWORDS:
+        if any(kw in combined for kw in keywords):
+            # First pass: check year-specific entries
+            for year_hint, doc_title in year_mappings:
+                if year_hint is not None and year_hint in combined:
+                    return dieu_so, doc_title
+            # Second pass: fallback to default (year_hint=None)
+            for year_hint, doc_title in year_mappings:
+                if year_hint is None:
+                    return dieu_so, doc_title
+
+    # If we found a Điều number but couldn't map the document, return dieu_so only
+    # This allows a broader metadata search across all documents
+    if dieu_so:
+        return dieu_so, None
+
+    return None, None
+
+
+def _inject_article_lookup(query: str, search_results: dict) -> bool:
+    """
+    If the query asks for a specific article by number, fetch it directly
+    from Qdrant via metadata filter and inject into search results.
+
+    Returns True if injection happened.
+    """
+    dieu_so, doc_title = _detect_article_lookup(query)
+    if not dieu_so:
+        return False
+
+    logger.info(f"[ArticleLookup] Detected: Điều {dieu_so}" +
+                (f" of '{doc_title}'" if doc_title else " (no doc match)"))
+
+    if doc_title:
+        exact_results = fetch_specific_article(doc_title=doc_title, dieu_so=dieu_so)
+    else:
+        # Try a broader search: just by dieu_so across all documents
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        from app.services.rag.retriever import get_qdrant_client, _parse_qdrant_results
+        from app.core.config import Config
+        client = get_qdrant_client()
+        try:
+            response, _ = client.scroll(
+                collection_name=Config.QDRANT_COLLECTION,
+                scroll_filter=Filter(
+                    must=[FieldCondition(key="dieu_so", match=MatchValue(value=dieu_so))]
+                ),
+                limit=10,
+                with_payload=True
+            )
+            exact_results = _parse_qdrant_results(response) if response else []
+        except Exception as e:
+            logger.error(f"[ArticleLookup] Broad search failed: {e}")
+            exact_results = []
+
+    if not exact_results:
+        logger.info(f"[ArticleLookup] No results found for Điều {dieu_so}.")
+        return False
+
+    # Boost scores and mark source, then prepend to existing results
+    for r in exact_results:
+        r["score"] = max(r.get("score", 0), 0.95)  # Ensure high score for exact match
+        r["_source"] = "article_lookup"
+
+    # Deduplicate: remove any existing results that match the same article
+    existing = search_results.get("vector_results", [])
+    existing_keys = set()
+    for r in exact_results:
+        existing_keys.add((r.get("doc_title", ""), r.get("dieu_so", "")))
+
+    filtered_existing = [
+        r for r in existing
+        if (r.get("doc_title", ""), r.get("dieu_so", "")) not in existing_keys
+    ]
+
+    search_results["vector_results"] = exact_results + filtered_existing
+    logger.info(f"[ArticleLookup] Injected {len(exact_results)} exact chunks for Điều {dieu_so}.")
+    return True
 
 # Configure Gemini
 _model = None
@@ -333,6 +519,10 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             entities=extracted_entities,
             top_k=Config.TOP_K_RESULTS,
         )
+
+        # ── Article-Lookup: exact metadata fetch for "Điều X Luật Y" queries ──
+        _inject_article_lookup(rewritten_query, search_results)
+        _inject_article_lookup(query, search_results)  # also try original query
 
         graph_data = search_results.get("graph_data", {"nodes": [], "edges": []})
         rag_context = get_context_from_results(search_results["vector_results"])
@@ -914,6 +1104,10 @@ def generate_response_stream(query: str, conversation_id: str = None):
             entities=extracted_entities,
             top_k=Config.TOP_K_RESULTS,
         )
+
+        # ── Article-Lookup: exact metadata fetch for "Điều X Luật Y" queries ──
+        _inject_article_lookup(rewritten_query, search_results)
+        _inject_article_lookup(query, search_results)  # also try original query
 
         graph_data = search_results.get("graph_data", {"nodes": [], "edges": []})
         rag_context = get_context_from_results(search_results["vector_results"])

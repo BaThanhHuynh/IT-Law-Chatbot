@@ -7,6 +7,7 @@ let currentConversationId = null;
 let isLoading = false;
 let currentChatAbortController = null; // Abort pending chat request on conversation switch
 let conversationsCache = [];
+let shouldAutoScroll = true;
 
 
 // ---- DOM Elements ----
@@ -71,6 +72,32 @@ function setupEventListeners() {
         messageInput.style.height = 'auto';
         messageInput.style.height = Math.min(messageInput.scrollHeight, 120) + 'px';
     });
+
+    // Smart Scroll: Detect manual scroll up
+    chatArea.addEventListener('scroll', () => {
+        const threshold = 80;
+        const isAtBottom = chatArea.scrollHeight - chatArea.clientHeight - chatArea.scrollTop <= threshold;
+        
+        if (isAtBottom) {
+            shouldAutoScroll = true;
+            hideScrollBottomButton();
+        } else {
+            // Only disable auto-scroll if it was previously enabled AND we are actually loading/streaming
+            if (shouldAutoScroll && isLoading) {
+                shouldAutoScroll = false;
+            }
+        }
+    });
+
+    // Scroll to bottom button click
+    const btnScrollToBottom = document.getElementById('btnScrollToBottom');
+    if (btnScrollToBottom) {
+        btnScrollToBottom.addEventListener('click', () => {
+            shouldAutoScroll = true;
+            scrollToBottom('smooth', true);
+            hideScrollBottomButton();
+        });
+    }
 }
 
 // ---- API Calls ----
@@ -166,7 +193,8 @@ async function loadConversation(conversationId) {
             result.data.forEach(msg => {
                 appendMessage(msg.role, msg.content, msg.sources);
             });
-            scrollToBottom();
+            shouldAutoScroll = true;
+            scrollToBottom('smooth', true);
         }
     } catch (e) {
         console.error('Failed to load conversation:', e);
@@ -192,6 +220,8 @@ function newConversation() {
     messagesContainer.style.display = 'none';
     messagesContainer.innerHTML = '';
     chatTitle.textContent = 'ITL Assistant';
+    shouldAutoScroll = true;
+    hideScrollBottomButton();
 
     document.querySelectorAll('.conversation-item').forEach(item => {
         item.classList.remove('active');
@@ -216,7 +246,8 @@ async function sendMessage() {
 
     // Append user message
     appendMessage('user', message);
-    scrollToBottom();
+    shouldAutoScroll = true;
+    scrollToBottom('smooth', true);
 
     // Show typing indicator — kept alive until first text chunk from server
     const typingEl = showTypingIndicator();
@@ -246,7 +277,7 @@ async function sendMessage() {
         if (!msgShown) {
             if (typingEl.parentNode) typingEl.remove();
             messagesContainer.appendChild(msgDiv);
-            scrollToBottom();
+            scrollToBottom('smooth', true);
             msgShown = true;
         }
     }
@@ -282,7 +313,7 @@ async function sendMessage() {
 
             // Re-render
             contentDiv.innerHTML = formatMessageContent(displayedText, true);
-            scrollToBottom();
+            scrollToBottom('auto');
         }
 
         typeAnimId = requestAnimationFrame(typewriterTick);
@@ -389,7 +420,7 @@ async function sendMessage() {
                             if (rawReceivedText.includes('<thinking>') || '<thinking>'.startsWith(rawReceivedText.trim())) {
                                 displayedText = rawReceivedText;
                                 contentDiv.innerHTML = formatMessageContent(displayedText, true);
-                                scrollToBottom();
+                                scrollToBottom('auto');
                             } else {
                                 const newChars = rawReceivedText.substring(queuedAnswerLength);
                                 typeQueue += newChars;
@@ -400,7 +431,7 @@ async function sendMessage() {
                                 thinkingEnded = true;
                                 displayedText = rawReceivedText.substring(0, thinkingEndIdx + 11);
                                 contentDiv.innerHTML = formatMessageContent(displayedText, true);
-                                scrollToBottom();
+                                scrollToBottom('auto');
                             }
                             const totalAnswer = rawReceivedText.substring(thinkingEndIdx + 11);
                             const newAnswerChars = totalAnswer.substring(queuedAnswerLength);
@@ -474,7 +505,7 @@ async function sendMessage() {
 
     isLoading = false;
     btnSend.disabled = false;
-    scrollToBottom();
+    scrollToBottom('smooth');
     messageInput.focus();
 }
 
@@ -547,7 +578,7 @@ function appendMessage(role, content, sources = null, animate = false) {
                 tempDiv.innerHTML = sourcesHtml;
                 bodyEl.appendChild(tempDiv.firstElementChild);
             }
-            scrollToBottom();
+            scrollToBottom('smooth', true);
         });
     }
 }
@@ -583,7 +614,7 @@ async function typeWriterHTML(el, htmlString, speed = 15) {
         }
 
         el.innerHTML = htmlString.substring(0, cursor);
-        scrollToBottom();
+        scrollToBottom('auto');
         await new Promise(r => setTimeout(r, frameDelay));
     }
     el.innerHTML = htmlString;
@@ -604,7 +635,7 @@ function showTypingIndicator() {
         </div>
     `;
     messagesContainer.appendChild(div);
-    scrollToBottom();
+    scrollToBottom('smooth', true);
     return div;
 }
 
@@ -728,13 +759,27 @@ function formatTime(dateStr) {
     return date.toLocaleDateString('vi-VN');
 }
 
-function scrollToBottom() {
+function scrollToBottom(behavior = 'smooth', force = false) {
+    if (!shouldAutoScroll && !force) {
+        showScrollBottomButton();
+        return;
+    }
     requestAnimationFrame(() => {
         chatArea.scrollTo({
             top: chatArea.scrollHeight,
-            behavior: 'smooth'
+            behavior: behavior
         });
     });
+}
+
+function showScrollBottomButton() {
+    const btn = document.getElementById('btnScrollToBottom');
+    if (btn) btn.classList.add('show');
+}
+
+function hideScrollBottomButton() {
+    const btn = document.getElementById('btnScrollToBottom');
+    if (btn) btn.classList.remove('show');
 }
 
 function copyToClipboard(btn) {

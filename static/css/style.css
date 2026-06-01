@@ -480,6 +480,7 @@ body {
     flex: 1;
     display: flex;
     overflow: hidden;
+    position: relative;
 }
 
 /* ---- Chat Area ---- */
@@ -1054,3 +1055,55 @@ body {
 [data-theme="light"] .source-modal {
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.15);
 }
+
+/* ---- Floating Scroll-to-Bottom Button ---- */
+.btn-scroll-bottom {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: var(--bg-tertiary);
+    color: var(--accent-primary);
+    border: 1px solid var(--accent-primary);
+    padding: 10px 20px;
+    border-radius: var(--radius-xl);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: var(--shadow-lg), var(--shadow-glow);
+    transition: all var(--transition);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 99;
+}
+
+.btn-scroll-bottom.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+    pointer-events: auto;
+}
+
+.btn-scroll-bottom:hover {
+    background: var(--accent-primary);
+    color: #ffffff;
+    box-shadow: var(--shadow-lg), 0 0 25px var(--accent-glow);
+    transform: translateX(-50%) translateY(-2px);
+}
+
+.btn-scroll-bottom svg {
+    animation: floatDown 1.5s ease-in-out infinite;
+}
+
+@keyframes floatDown {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(3px); }
+}
+
+[data-theme="light"] .btn-scroll-bottom {
+    background: var(--bg-primary);
+    box-shadow: var(--shadow-lg), 0 4px 12px rgba(32, 201, 151, 0.15);
+}
+
