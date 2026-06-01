@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+google-genai
+sentence-transformers
+numpy<2
+qdrant-client
+neo4j
+langchain-neo4j
+langchain-text-splitters
+openpyxl
+python-docx
+tqdm
+slowapi
