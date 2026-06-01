@@ -182,7 +182,7 @@ def multi_query_search(queries: list, top_k: int = None) -> list:
 
     logger.info(
         f"[HybridSearch] RRF fused {len(fused)} unique chunks from "
-        f"{len(queries)} dense lists + BM25 → returning top {len(final)} "
+        f"{len(queries)} dense lists + BM25 -> returning top {len(final)} "
         f"(pool={pool_size}, k={rrf_k})."
     )
     return final

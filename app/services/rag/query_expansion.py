@@ -52,7 +52,7 @@ def expand_abbreviations(text: str) -> str:
     result = " ".join(expanded)
     
     if result != text:
-        logger.info(f"[QueryExpand] '{text}' → '{result}'")
+        logger.info(f"[QueryExpand] '{text}' -> '{result}'")
     
     return result
 
@@ -226,7 +226,7 @@ def get_domain_static_queries(query: str) -> list:
                 queries = _DOMAIN_STATIC_RULES[rule_idx][1]
                 static_queries.extend(queries)
                 triggered_indices.add(rule_idx)
-                logger.info(f"[DomainStatic] Word-pair trigger {word_pair} → injected {len(queries)} static queries")
+                logger.info(f"[DomainStatic] Word-pair trigger {word_pair} -> injected {len(queries)} static queries")
     
     return static_queries
 

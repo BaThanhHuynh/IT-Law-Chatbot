@@ -541,7 +541,7 @@ def _expand_via_graph(vector_results: list, kg: "KnowledgeGraph", query: str = "
         if query_embedding is not None and candidates:
             scored_candidates = _score_graph_chunks(query_embedding, candidates)
             logger.info(
-                f"[GraphExpand] Relevance filter: {len(candidates)} candidates → "
+                f"[GraphExpand] Relevance filter: {len(candidates)} candidates -> "
                 f"{len(scored_candidates)} passed (threshold={MIN_GRAPH_INJECT_SCORE})"
             )
         else:
@@ -648,11 +648,19 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
     # we overlap the Qdrant/embedding work with the Neo4j vector lookup.
     kg = get_knowledge_graph()
     graph_search_term = entities if entities else query
-    with ThreadPoolExecutor(max_workers=2) as ex:
-        f_vector = ex.submit(multi_query_search, all_queries, top_k)
-        f_entities = ex.submit(_safe_search_entities, kg, graph_search_term, top_k)
-        vector_results = f_vector.result()
-        kg_results = f_entities.result()
+    
+    import os
+    eval_mode = os.environ.get("EVAL_MODE") == "true"
+    
+    if eval_mode:
+        vector_results = multi_query_search(all_queries, top_k)
+        kg_results = _safe_search_entities(kg, graph_search_term, top_k)
+    else:
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            f_vector = ex.submit(multi_query_search, all_queries, top_k)
+            f_entities = ex.submit(_safe_search_entities, kg, graph_search_term, top_k)
+            vector_results = f_vector.result()
+            kg_results = f_entities.result()
 
     # NOTE: Không hardcode fallback inject điều luật cụ thể ở đây.
     # Việc tìm đúng điều luật được đảm bảo qua 3 lớp:
@@ -679,15 +687,21 @@ def hybrid_search(query: str, sub_queries: list = None, entities: str = None, to
     # one, which is the single biggest cut to time-to-first-token.
     graph_context = ""
     graph_data = {"nodes": [], "edges": []}
-    with ThreadPoolExecutor(max_workers=3) as ex:
-        f_expand = ex.submit(_safe_expand_via_graph, vector_results, kg, query, top_k)
-        f_context = ex.submit(_safe_graph_context, kg, matched_entity_ids) if matched_entity_ids else None
-        f_viz = ex.submit(_safe_graph_viz, kg, matched_entity_ids) if matched_entity_ids else None
-        vector_results = f_expand.result()
-        if f_context:
-            graph_context = f_context.result()
-        if f_viz:
-            graph_data = f_viz.result()
+    
+    if eval_mode:
+        vector_results = _safe_expand_via_graph(vector_results, kg, query, top_k)
+        graph_context = _safe_graph_context(kg, matched_entity_ids) if matched_entity_ids else ""
+        graph_data = _safe_graph_viz(kg, matched_entity_ids) if matched_entity_ids else {"nodes": [], "edges": []}
+    else:
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            f_expand = ex.submit(_safe_expand_via_graph, vector_results, kg, query, top_k)
+            f_context = ex.submit(_safe_graph_context, kg, matched_entity_ids) if matched_entity_ids else None
+            f_viz = ex.submit(_safe_graph_viz, kg, matched_entity_ids) if matched_entity_ids else None
+            vector_results = f_expand.result()
+            if f_context:
+                graph_context = f_context.result()
+            if f_viz:
+                graph_data = f_viz.result()
 
     return {
         "vector_results": vector_results,

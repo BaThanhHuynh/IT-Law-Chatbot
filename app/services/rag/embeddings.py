@@ -1,9 +1,11 @@
 import math
 import numpy as np
+import threading
 from sentence_transformers import SentenceTransformer
 from app.core.config import Config
 
 _model = None
+_model_lock = threading.Lock()
 
 # LRU cache: maps text → embedding as tuple (hashable).
 # Capped at EMBEDDING_CACHE_SIZE to bound memory usage.
@@ -26,8 +28,9 @@ def get_embedding(text: str) -> np.ndarray:
     if text in _embedding_cache:
         return _embedding_cache[text]
 
-    model = get_model()
-    embedding = np.array(model.encode(text, normalize_embeddings=True), dtype=np.float32)
+    with _model_lock:
+        model = get_model()
+        embedding = np.array(model.encode(text, normalize_embeddings=True), dtype=np.float32)
 
     if len(_embedding_cache) < Config.EMBEDDING_CACHE_SIZE:
         _embedding_cache[text] = embedding
@@ -42,8 +45,9 @@ def get_embedding(text: str) -> np.ndarray:
 
 def get_embeddings_batch(texts: list) -> list:
     """Generate embeddings for a batch of texts."""
-    model = get_model()
-    embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=True)
+    with _model_lock:
+        model = get_model()
+        embeddings = model.encode(texts, normalize_embeddings=True, show_progress_bar=True)
     return [np.array(e, dtype=np.float32) for e in embeddings]
 
 
