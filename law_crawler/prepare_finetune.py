@@ -1,7 +1,7 @@
 """
 prepare_finetune.py
 ===================
-Chuẩn bị corpus sạch cho Thành fine-tune PhoBERT MLM.
+Chuẩn bị corpus sạch cho fine tune
 Ưu tiên full_dieu_text từ law_chunks_hier.jsonl + Nội dung điều từ Excel.
 
 Output: data/finetune_corpus.jsonl  →  {"text": "toàn bộ điều luật dài"}
