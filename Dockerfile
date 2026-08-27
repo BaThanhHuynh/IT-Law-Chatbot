@@ -13,18 +13,17 @@ RUN apt-get update && apt-get install -y \
 
 # Tạo môi trường ảo
 RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+ENV PATH="/opt/venv/bin:$PATH" \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5
 
-# Nâng cấp pip và cài đặt PyTorch phiên bản CPU
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+# Copy requirements file
+COPY requirements.txt .
 
-# Cài đặt các dependencies theo nhóm để tránh lỗi I/O của WSL2 khi giải nén các wheel lớn
-RUN pip install --no-cache-dir "numpy<2"
-RUN pip install --no-cache-dir fastapi uvicorn pydantic python-dotenv google-genai slowapi
-RUN pip install --no-cache-dir qdrant-client neo4j langchain-neo4j langchain-text-splitters
-RUN pip install --no-cache-dir openpyxl python-docx tqdm
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu sentence-transformers
+# Cài đặt toàn bộ dependencies với PyTorch CPU index
+RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
+
+
 
 
 # ==========================================
@@ -49,7 +48,7 @@ EXPOSE 5000
 # Các biến môi trường mặc định
 ENV PYTHONUNBUFFERED=1
 ENV API_PORT=5000
-ENV EMBEDDING_MODEL=/app/models/embedding_model
+ENV EMBEDDING_MODEL=/app/models/law_v2_model_20260505_1418
 
 # Lệnh khởi chạy ứng dụng
 CMD ["python", "-m", "app.main"]

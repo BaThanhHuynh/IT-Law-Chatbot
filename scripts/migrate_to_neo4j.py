@@ -4,16 +4,24 @@ import json
 from neo4j import GraphDatabase
 from sentence_transformers import SentenceTransformer
 
-# Thêm đường dẫn project vào sys.path
+# Thêm đường dẫn project vào đầu sys.path
 current_dir = os.path.dirname(os.path.abspath(__file__))
 project_dir = os.path.dirname(current_dir)
-sys.path.append(project_dir)
+if project_dir in sys.path:
+    sys.path.remove(project_dir)
+sys.path.insert(0, project_dir)
+
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from app.core.config import Config
 from app.core.logger import logger
 
 KG_DATA_PATH = os.path.join(project_dir, "law_crawler", "data", "kg_data.json")
-MODEL_NAME = r"C:\law_v2_model_20260505_1418" # Cập nhật mô hình mới
+MODEL_NAME = os.path.join(project_dir, "models", "law_v2_model_20260505_1418")
+
 
 def migrate_to_neo4j():
     """Đọc dữ liệu từ file JSON, nhúng vector và ghi vào Neo4j."""
@@ -47,6 +55,11 @@ def migrate_to_neo4j():
     # KHỞI TẠO MÔ HÌNH EMBEDDING
     logger.info(f"Đang tải mô hình embedding: {MODEL_NAME}...")
     try:
+        import torch
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
         model = SentenceTransformer(MODEL_NAME)
     except Exception as e:
         logger.error(f"Lỗi khi tải mô hình embedding: {e}")
@@ -68,53 +81,57 @@ def migrate_to_neo4j():
         return
 
     with driver.session() as session:
-        # ĐÃ VÔ HIỆU HÓA LỆNH XÓA ĐỂ GIỮ LẠI DỮ LIỆU CŨ
-        # logger.info("Đang xóa dữ liệu cũ trong Neo4j...")
-        # session.run("MATCH (n) DETACH DELETE n")
-        
-        # Thêm Entities (Nodes) và nhúng Vector
-        logger.info("Đang tạo Nodes và tính toán Embeddings...")
-        for entity in entities:
-            label = entity["entity_type"]
-            name = entity["name"]
-            description = entity.get("description", "")
-            
-            # Tạo nội dung để nhúng (kết hợp tên và mô tả)
-            text_to_embed = f"{name}. {description}"
-            # Chuyển đổi thành vector (đưa về dạng list để lưu vào Neo4j)
-            embedding_vector = model.encode(text_to_embed, normalize_embeddings=True).tolist()
+        # Thêm Entities (Nodes) và nhúng Vector theo Batch
+        logger.info(f"Đang tạo {len(entities)} Nodes và tính toán Embeddings...")
+        batch_size = 64
+        for i in range(0, len(entities), batch_size):
+            batch = entities[i:i + batch_size]
+            texts_to_embed = [f"{e['name']}. {e.get('description', '')}" for e in batch]
+            with torch.no_grad():
+                embeddings = model.encode(texts_to_embed, normalize_embeddings=True, batch_size=batch_size, show_progress_bar=False).tolist()
 
-            query = f"""
-            MERGE (n:`{label}` {{entity_id: $entity_id}})
-            SET n.name = $name,
-                n.description = $description,
-                n.embedding = $embedding,
-                n:Entity
-            """
-            session.run(query, {
-                "entity_id": entity["entity_id"],
-                "name": name,
-                "description": description,
-                "embedding": embedding_vector
-            })
-            
-        # Thêm Relationships (Edges)
-        logger.info("Đang tạo Relationships...")
-        for rel in relationships:
-            rel_type = rel["relationship_type"].replace(" ", "_").upper()
-            query = f"""
-            MATCH (source {{entity_id: $source_id}})
-            MATCH (target {{entity_id: $target_id}})
-            MERGE (source)-[r:`{rel_type}`]->(target)
-            SET r.description = $description,
-                r.weight = $weight
-            """
-            session.run(query, {
-                "source_id": rel["source_entity_id"],
-                "target_id": rel["target_entity_id"],
-                "description": rel.get("description", ""),
-                "weight": rel.get("weight", 1.0)
-            })
+            for entity, emb in zip(batch, embeddings):
+                label = entity["entity_type"]
+                session.run(f"""
+                MERGE (n:`{label}` {{entity_id: $entity_id}})
+                SET n.name = $name,
+                    n.description = $description,
+                    n.embedding = $embedding,
+                    n:Entity
+                """, {
+                    "entity_id": entity["entity_id"],
+                    "name": entity["name"],
+                    "description": entity.get("description", ""),
+                    "embedding": emb
+                })
+
+        # Thêm Relationships (Edges) theo Batch UNWIND
+        logger.info(f"Đang tạo {len(relationships)} Relationships...")
+        rel_batch_size = 200
+        for i in range(0, len(relationships), rel_batch_size):
+            batch = relationships[i:i + rel_batch_size]
+            rels_by_type = {}
+            for r in batch:
+                rtype = r["relationship_type"].replace(" ", "_").upper()
+                if rtype not in rels_by_type:
+                    rels_by_type[rtype] = []
+                rels_by_type[rtype].append({
+                    "source_id": r["source_entity_id"],
+                    "target_id": r["target_entity_id"],
+                    "description": r.get("description", ""),
+                    "weight": r.get("weight", 1.0)
+                })
+            for rtype, r_list in rels_by_type.items():
+                query = f"""
+                UNWIND $batch AS rel
+                MATCH (source {{entity_id: rel.source_id}})
+                MATCH (target {{entity_id: rel.target_id}})
+                MERGE (source)-[r:`{rtype}`]->(target)
+                SET r.description = rel.description,
+                    r.weight = rel.weight
+                """
+                session.run(query, {"batch": r_list})
+
 
         logger.info("Đang tạo indexes...")
         try:

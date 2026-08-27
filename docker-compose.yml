@@ -20,7 +20,7 @@ services:
     environment:
       - QDRANT_URL=http://qdrant:6333
       # Lưu ý: Nếu Neo4j chạy trên host (Windows), hãy dùng host.docker.internal làm URI trong file .env
-      - EMBEDDING_MODEL=/app/models/embedding_model
+      - EMBEDDING_MODEL=/app/models/law_v2_model_20260505_1418
     depends_on:
       - qdrant
     volumes:

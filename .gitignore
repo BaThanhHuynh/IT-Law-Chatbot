@@ -14,8 +14,6 @@ law_crawler/data/
 *.txt
 data/
 logs/
-database/
-.understand-anything/
 # IDE
 .vscode/
 
@@ -23,3 +21,4 @@ database/
 *.sqlite3
 *.db
 models/
+CLAUDE.md

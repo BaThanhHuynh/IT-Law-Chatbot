@@ -38,7 +38,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 log = logging.getLogger(__name__)
 
 # ── Cấu hình ─────────────────────────────────────────────────────────────────
-MODEL_NAME      = r"C:\law_v2_model_20260505_1418"   # Fine-tuned model path
+PROJECT_ROOT    = Path(__file__).resolve().parent.parent
+MODEL_NAME      = str(PROJECT_ROOT / "models" / "law_v2_model_20260505_1418")
 COLLECTION_NAME = "it_law_chunks"
 VECTOR_DIM      = 768                        # output dim
 BATCH_SIZE      = 256                       # số chunk xử lý mỗi lần
@@ -48,6 +49,13 @@ QDRANT_URL      = "http://localhost:6333"
 # ── Embedding ─────────────────────────────────────────────────────────────────
 
 def load_model(model_name: str, device: str):
+    p = Path(model_name)
+    if not p.exists():
+        if (PROJECT_ROOT / model_name).exists():
+            model_name = str(PROJECT_ROOT / model_name)
+        elif (PROJECT_ROOT / "models" / model_name).exists():
+            model_name = str(PROJECT_ROOT / "models" / model_name)
+
     log.info(f"📥 Load model: {model_name} → device={device}")
     model = SentenceTransformer(model_name, device=device)
     log.info("✅ Model loaded")
@@ -170,11 +178,17 @@ def main():
     args = parser.parse_args()
 
     # Load data
-    script_dir = Path(__file__).parent.absolute()
-    input_path = script_dir / args.input
+    input_path = Path(args.input)
     if not input_path.exists():
-        log.error(f"Không tìm thấy: {input_path}")
-        return
+        script_dir = Path(__file__).parent.absolute()
+        if (script_dir / args.input).exists():
+            input_path = script_dir / args.input
+        elif (PROJECT_ROOT / args.input).exists():
+            input_path = PROJECT_ROOT / args.input
+        else:
+            log.error(f"Không tìm thấy: {args.input}")
+            return
+
 
     chunks = []
     with open(input_path, "r", encoding="utf-8") as f:

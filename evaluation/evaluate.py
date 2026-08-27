@@ -7,9 +7,9 @@
 Metrics: Hit@1, Hit@3, Hit@5, MRR, Average Rank.
 
 Cách chạy:
-    python evaluate_retrieval.py
-    python evaluate_retrieval.py --n 100 --top-k 10
-    python evaluate_retrieval.py --csv "D:/Download/Test_data_lawCNTT_cleaned (1).csv"
+    python evaluation/evaluate.py
+    python evaluation/evaluate.py --n 100 --top-k 5
+    python evaluation/evaluate.py --csv "evaluation/Test_data_lawCNTT_cleaned (1).csv"
 """
 import os
 import sys
@@ -185,8 +185,8 @@ def evaluate_rag_only(query: str, gold: str, top_k: int) -> dict:
         logger.error(f"[RAG] Failed: {e}")
         return {"hit": False, "rank": -1, "n_results": 0}
 
-    # Áp dụng ngưỡng lọc khắt khe hơn để hạ chỉ số RAG (0.70)
-    results = [r for r in results if r.get("score", 0) >= 0.70]
+    # Áp dụng ngưỡng lọc thực tế của hệ thống (score >= 0.35)
+    results = [r for r in results if r.get("score", 0) >= 0.35]
 
     rank = -1
     for i, r in enumerate(results[:top_k]):
@@ -236,10 +236,14 @@ def evaluate_hybrid(query: str, gold: str, top_k: int) -> dict:
         logger.error(f"[Hybrid] Failed: {e}")
         return {"hit": False, "rank": -1, "n_results": 0}
 
-    # Áp dụng bộ lọc thực tế của Chatbot (score >= 0.35 hoặc graph_expand)
+    # Áp dụng bộ lọc thực tế của Chatbot (score >= 0.35 hoặc graph_expand hoặc hybrid bm25)
     filtered_results = []
     for r in vector_results:
-        if r.get("_source") == "graph_expand" or r.get("score", 0) >= 0.35:
+        if (
+            r.get("_source") in ("graph_expand", "hybrid")
+            or r.get("score", 0) >= 0.35
+            or r.get("rrf_score", 0) > 0
+        ):
             filtered_results.append(r)
 
     rank = -1

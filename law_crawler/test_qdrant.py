@@ -2,12 +2,15 @@
 test_qdrant.py - Phiên bản Hierarchical (in full_dieu_text rõ ràng hơn)
 """
 
+from pathlib import Path
 from qdrant_client import QdrantClient
 from sentence_transformers import SentenceTransformer
 
 # ========================== CẤU HÌNH ==========================
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 COLLECTION_NAME = "it_law_chunks"
-MODEL_PATH = r"C:\law_v2_model_20260505_1418"
+MODEL_PATH = str(PROJECT_ROOT / "models" / "law_v2_model_20260505_1418")
+
 
 QUERIES = [
     "những hành vi nào bị nghiêm cấm trên không gian mạng"

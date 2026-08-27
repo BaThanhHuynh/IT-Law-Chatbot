@@ -18,6 +18,8 @@ logs/
 *.xlsx
 *.docx
 .pytest_cache/
-evaluation_results/
 law_crawler/data/*
 !law_crawler/data/law_chunks.jsonl
+!law_crawler/data/law_chunks_hier.jsonl
+!law_crawler/data/kg_data.json
+

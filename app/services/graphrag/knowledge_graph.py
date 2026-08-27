@@ -11,8 +11,23 @@ from concurrent.futures import ThreadPoolExecutor
 from app.core.config import Config
 from app.core.logger import logger
 from app.services.rag.retriever import multi_query_search
-from app.services.rag.query_expansion import expand_abbreviations, get_domain_static_queries
-from langchain_neo4j import Neo4jGraph
+from neo4j import GraphDatabase
+
+
+class Neo4jGraphClient:
+    """Native Neo4j Client wrapper replacing langchain_neo4j to avoid unnecessary heavy dependencies."""
+
+    def __init__(self, uri: str, user: str, password: str):
+        self._driver = GraphDatabase.driver(uri, auth=(user, password))
+
+    def query(self, cypher: str, params: dict = None) -> list:
+        with self._driver.session() as session:
+            result = session.run(cypher, params or {})
+            return [record.data() for record in result]
+
+    def close(self):
+        if self._driver:
+            self._driver.close()
 
 
 class KnowledgeGraph:
@@ -24,14 +39,13 @@ class KnowledgeGraph:
     @property
     def graph(self):
         if self._graph is None:
-            self._graph = Neo4jGraph(
-                url=Config.NEO4J_URI,
-                username=Config.NEO4J_USERNAME,
-                password=Config.NEO4J_PASSWORD,
-                enhanced_schema=False,
-                refresh_schema=False
+            self._graph = Neo4jGraphClient(
+                uri=Config.NEO4J_URI,
+                user=Config.NEO4J_USERNAME,
+                password=Config.NEO4J_PASSWORD
             )
         return self._graph
+
 
     def search_entities(self, query: str, top_k: int = 5, min_score: float = 0.35) -> list:
         """
