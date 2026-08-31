@@ -14,6 +14,8 @@ class Config:
     QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
     QDRANT_COLLECTION = "it_law_chunks"
     QDRANT_HISTORY_COLLECTION = "chat_history"
+    QDRANT_MEMORY_COLLECTION = "user_memory"
+    ENABLE_MEMORY = os.getenv("ENABLE_MEMORY", "true").lower() == "true"
 
     # Chat History (JSON)
     CHAT_HISTORY_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "chat_history.json")

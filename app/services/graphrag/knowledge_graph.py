@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 from app.core.config import Config
 from app.core.logger import logger
 from app.services.rag.retriever import multi_query_search
+from app.services.rag.query_expansion import expand_abbreviations, get_domain_static_queries
 from neo4j import GraphDatabase
 
 

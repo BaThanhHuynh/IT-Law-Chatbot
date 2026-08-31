@@ -4,6 +4,7 @@
 
 const API_BASE = '';  // Same origin
 let currentConversationId = null;
+let currentUserId = localStorage.getItem('it_law_user_id') || 'default_user';
 let isLoading = false;
 let currentChatAbortController = null; // Abort pending chat request on conversation switch
 let conversationsCache = [];
@@ -39,6 +40,7 @@ const chatTitle = document.getElementById('chatTitle');
 document.addEventListener('DOMContentLoaded', () => {
     loadConversations();
     setupEventListeners();
+    initMemoryHub();
 });
 
 function setupEventListeners() {
@@ -110,7 +112,17 @@ async function apiCall(url, method = 'GET', data = null, signal = null) {
     if (signal) options.signal = signal;
 
     const response = await fetch(`${API_BASE}${url}`, options);
-    return response.json();
+    let result;
+    try {
+        result = await response.json();
+    } catch (e) {
+        throw new Error(`Phản hồi không hợp lệ từ máy chủ (HTTP ${response.status})`);
+    }
+
+    if (!response.ok) {
+        throw new Error(result.detail || `Lỗi máy chủ (HTTP ${response.status})`);
+    }
+    return result;
 }
 
 // ---- Conversations ----
@@ -343,6 +355,7 @@ async function sendMessage() {
             body: JSON.stringify({
                 message: message,
                 conversation_id: currentConversationId,
+                user_id: currentUserId,
             }),
             signal: signal,
         });
@@ -871,5 +884,270 @@ document.getElementById('sourceModal').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) closeSourceModal();
 });
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeSourceModal();
+    if (e.key === 'Escape') {
+        closeSourceModal();
+        closeMemoryModal();
+    }
 });
+
+/* ============================================
+   MEMORY HUB MODULE (Mem0-inspired)
+   ============================================ */
+let activeMemoryTab = 'longterm';
+
+function initMemoryHub() {
+    const btnToggle = document.getElementById('btnMemoryToggle');
+    const modal = document.getElementById('memoryModal');
+    const btnClose = document.getElementById('btnCloseMemory');
+    const btnClear = document.getElementById('btnClearAllMemories');
+    const tabLong = document.getElementById('tabLongTerm');
+    const tabShort = document.getElementById('tabShortTerm');
+
+    if (btnToggle) {
+        btnToggle.addEventListener('click', openMemoryModal);
+    }
+    if (btnClose) {
+        btnClose.addEventListener('click', closeMemoryModal);
+    }
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeMemoryModal();
+        });
+    }
+    if (btnClear) {
+        btnClear.addEventListener('click', clearAllMemories);
+    }
+    if (tabLong) {
+        tabLong.addEventListener('click', () => switchMemoryTab('longterm'));
+    }
+    if (tabShort) {
+        tabShort.addEventListener('click', () => switchMemoryTab('shortterm'));
+    }
+
+    // Refresh memory count badge on startup
+    updateMemoryBadge();
+}
+
+function openMemoryModal() {
+    const modal = document.getElementById('memoryModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    setTimeout(() => modal.classList.add('active'), 10);
+    document.body.style.overflow = 'hidden';
+
+    if (activeMemoryTab === 'longterm') {
+        loadLongTermMemories();
+    } else {
+        loadShortTermSession();
+    }
+}
+
+function closeMemoryModal() {
+    const modal = document.getElementById('memoryModal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    setTimeout(() => {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }, 250);
+}
+
+function switchMemoryTab(tabName) {
+    activeMemoryTab = tabName;
+    const tabLong = document.getElementById('tabLongTerm');
+    const tabShort = document.getElementById('tabShortTerm');
+    const contentLong = document.getElementById('longTermTabContent');
+    const contentShort = document.getElementById('shortTermTabContent');
+
+    if (tabName === 'longterm') {
+        tabLong.classList.add('active');
+        tabShort.classList.remove('active');
+        contentLong.style.display = 'block';
+        contentShort.style.display = 'none';
+        loadLongTermMemories();
+    } else {
+        tabShort.classList.add('active');
+        tabLong.classList.remove('active');
+        contentShort.style.display = 'block';
+        contentLong.style.display = 'none';
+        loadShortTermSession();
+    }
+}
+
+async function updateMemoryBadge() {
+    const badge = document.getElementById('memoryBadgeCount');
+    if (!badge) return;
+    try {
+        const res = await apiCall(`/api/memory/user/${encodeURIComponent(currentUserId)}`);
+        if (res.success && res.data) {
+            const count = res.data.length;
+            if (count > 0) {
+                badge.textContent = count;
+                badge.style.display = 'flex';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    } catch (e) {
+        console.warn('[MemoryHub] Could not update badge:', e);
+    }
+}
+
+async function loadLongTermMemories() {
+    const listEl = document.getElementById('memoryList');
+    if (!listEl) return;
+    listEl.innerHTML = '<div class="memory-empty">Đang tải trí nhớ dài hạn...</div>';
+
+    try {
+        const res = await apiCall(`/api/memory/user/${encodeURIComponent(currentUserId)}`);
+        if (res.success && res.data) {
+            const memories = res.data;
+            updateMemoryBadge();
+
+            if (memories.length === 0) {
+                listEl.innerHTML = `
+                    <div class="memory-empty">
+                        <p>Chưa có thông tin dài hạn nào được lưu.</p>
+                        <p style="font-size:0.75rem;margin-top:6px;opacity:0.8;">Khi bạn tương tác và chia sẻ về vai trò, dự án hoặc tình huống pháp lý, AI sẽ tự động ghi nhớ tại đây.</p>
+                    </div>`;
+                return;
+            }
+
+            listEl.innerHTML = memories.map(m => {
+                const tagClass = m.memory_type === 'user_profile' ? 'profile' : 'legal';
+                const tagLabel = m.memory_type === 'user_profile' ? 'Hồ sơ người dùng' : 'Ngữ cảnh pháp lý';
+                const timeStr = m.updated_at ? formatTime(m.updated_at) : '';
+                const updateBadge = m.update_count > 1 ? `<span class="memory-tag">Cập nhật ${m.update_count} lần</span>` : '';
+
+                return `
+                    <div class="memory-item-card" id="mem-${m.id}">
+                        <div class="memory-item-content">
+                            <div class="memory-item-text">${escapeHtml(m.fact || '')}</div>
+                            <div class="memory-item-meta">
+                                <span class="memory-tag ${tagClass}">${tagLabel}</span>
+                                ${updateBadge}
+                                ${timeStr ? `<span>${timeStr}</span>` : ''}
+                            </div>
+                        </div>
+                        <button class="btn-delete-memory-item" onclick="deleteMemoryFact('${m.id}')" title="Xóa thông tin này">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                            </svg>
+                        </button>
+                    </div>
+                `;
+            }).join('');
+        }
+    } catch (e) {
+        listEl.innerHTML = `<div class="memory-empty" style="color:var(--danger)">Lỗi tải dữ liệu: ${e.message}</div>`;
+    }
+}
+
+async function loadShortTermSession() {
+    const container = document.getElementById('sessionStateContainer');
+    if (!container) return;
+    if (!currentConversationId) {
+        container.innerHTML = '<div class="memory-empty">Hãy chọn hoặc bắt đầu một cuộc trò chuyện để xem ngữ cảnh phiên.</div>';
+        return;
+    }
+
+    container.innerHTML = '<div class="memory-empty">Đang tải ngữ cảnh phiên hiện tại...</div>';
+
+    try {
+        const res = await apiCall(`/api/memory/session/${encodeURIComponent(currentConversationId)}`);
+        if (res.success && res.data) {
+            const s = res.data;
+            const laws = s.focused_laws || [];
+            const articles = s.focused_articles || [];
+            const role = s.user_role;
+            const topic = s.last_topic;
+
+            if (!laws.length && !articles.length && !role && !topic) {
+                container.innerHTML = `
+                    <div class="memory-empty">
+                        <p>Phiên trò chuyện chưa ghi nhận văn bản trọng tâm nào.</p>
+                        <p style="font-size:0.75rem;margin-top:6px;opacity:0.8;">Khi bạn hỏi về các điều luật, bot sẽ duy trì trọng tâm để trả lời các câu hỏi tiếp nối siêu tốc (Fast-Path).</p>
+                    </div>`;
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="session-state-card">
+                    ${role ? `
+                        <div class="session-field">
+                            <span class="session-field-label">Đối tượng / Vai trò áp dụng</span>
+                            <div class="session-chips">
+                                <span class="session-chip highlight">${escapeHtml(role)}</span>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${laws.length ? `
+                        <div class="session-field">
+                            <span class="session-field-label">Văn bản luật đang tập trung</span>
+                            <div class="session-chips">
+                                ${laws.map(l => `<span class="session-chip">${escapeHtml(l)}</span>`).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${articles.length ? `
+                        <div class="session-field">
+                            <span class="session-field-label">Điều khoản trọng tâm</span>
+                            <div class="session-chips">
+                                ${articles.map(a => `<span class="session-chip highlight">${escapeHtml(a)}</span>`).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    ${topic ? `
+                        <div class="session-field">
+                            <span class="session-field-label">Chủ đề gần nhất</span>
+                            <div class="session-chips">
+                                <span class="session-chip">${escapeHtml(topic)}</span>
+                            </div>
+                        </div>
+                    ` : ''}
+
+                    <div style="font-size:0.72rem;color:var(--text-muted);margin-top:8px;">
+                        Số lượt tương tác trong phiên: <strong>${s.turn_count || 0}</strong>
+                    </div>
+                </div>
+            `;
+        }
+    } catch (e) {
+        container.innerHTML = `<div class="memory-empty" style="color:var(--danger)">Lỗi tải dữ liệu: ${e.message}</div>`;
+    }
+}
+
+async function deleteMemoryFact(memoryId) {
+    try {
+        const res = await apiCall(`/api/memory/${encodeURIComponent(memoryId)}`, 'DELETE');
+        if (res.success) {
+            const el = document.getElementById(`mem-${memoryId}`);
+            if (el) {
+                el.style.opacity = '0';
+                el.style.transform = 'scale(0.95)';
+                setTimeout(() => el.remove(), 200);
+            }
+            updateMemoryBadge();
+        }
+    } catch (e) {
+        alert('Không thể xóa thông tin: ' + e.message);
+    }
+}
+
+async function clearAllMemories() {
+    if (!confirm('Bạn có chắc chắn muốn xóa toàn bộ trí nhớ đã lưu về bạn?')) return;
+    try {
+        const res = await apiCall(`/api/memory/user/${encodeURIComponent(currentUserId)}`, 'DELETE');
+        if (res.success) {
+            loadLongTermMemories();
+            updateMemoryBadge();
+        }
+    } catch (e) {
+        alert('Không thể xóa dữ liệu: ' + e.message);
+    }
+}
+

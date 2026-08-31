@@ -18,7 +18,9 @@ from app.core.config import Config
 from app.core.logger import logger
 from app.core.security import verify_api_key
 from app.api.routes.chat import chat_router
+from app.api.routes.memory import memory_router
 from app.services.chatbot.engine import generate_response
+from app.services.memory import get_long_term_memory
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -30,6 +32,7 @@ class ChatQuery(BaseModel):
     """Request body cho endpoint /chat."""
     query: str = Field(..., description="Câu hỏi pháp lý của người dùng", min_length=1, max_length=Config.MAX_QUERY_LENGTH)
     conversation_id: Optional[str] = Field(None, description="ID cuộc hội thoại (tùy chọn)")
+    user_id: Optional[str] = Field("default_user", description="ID người dùng để cá nhân hóa bộ nhớ")
 
 
 class ChatAnswer(BaseModel):
@@ -76,10 +79,12 @@ async def lifespan(app: FastAPI):
         logger.info("Khởi tạo cấu hình Gemini LLM...")
         get_llm()
         
-        # 3. Kết nối CSDL
-        logger.info("Khởi tạo kết nối Qdrant & Neo4j...")
+        # 3. Kết nối CSDL & Bộ nhớ
+        logger.info("Khởi tạo kết nối Qdrant, Neo4j & User Memory Collection...")
         get_qdrant_client()
         get_knowledge_graph()
+        if Config.ENABLE_MEMORY:
+            get_long_term_memory()._init_collection()
         
         logger.info("Warmup hoàn tất! Hệ thống sẵn sàng nhận yêu cầu siêu tốc.")
     except Exception as e:
@@ -108,7 +113,7 @@ def create_app():
         CORSMiddleware,
         allow_origins=Config.ALLOWED_ORIGINS,
         allow_credentials=True,
-        allow_methods=["GET", "POST"],
+        allow_methods=["GET", "POST", "DELETE"],
         allow_headers=["Content-Type", "X-Api-Key"],
     )
 
@@ -142,7 +147,8 @@ def create_app():
 
         Body JSON:
             { "query": "Hành vi nào bị nghiêm cấm trên không gian mạng?",
-              "conversation_id": "optional-uuid" }
+              "conversation_id": "optional-uuid",
+              "user_id": "default_user" }
 
         Response JSON:
             { "answer": "...", "conversation_id": "...",
@@ -153,7 +159,8 @@ def create_app():
             raise HTTPException(status_code=400, detail="Vui lòng nhập câu hỏi.")
 
         try:
-            result = generate_response(query, payload.conversation_id)
+            user_id = payload.user_id or "default_user"
+            result = generate_response(query, payload.conversation_id, user_id=user_id)
             return ChatAnswer(
                 answer=result.get("answer", ""),
                 conversation_id=result.get("conversation_id", ""),
@@ -166,11 +173,11 @@ def create_app():
             logger.error(f"[/chat] Error: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Lỗi xử lý: {str(e)}")
 
-    # Include routers (giữ tương thích với /api/chat cũ)
+    # Include routers
     app.include_router(chat_router)
+    app.include_router(memory_router)
 
     # Serve static files at root (css, js, images, etc.)
-    # This must be after the router to not shadow API routes
     app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
     return app

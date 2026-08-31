@@ -105,10 +105,8 @@ def extract_entities_structured(query: str) -> list:
     try:
         model = get_llm()
         prompt = ENTITY_EXTRACTION_STRUCTURED_PROMPT.format(query=query)
-        response = model.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt,
-        )
+        chat = model.chats.create(model=Config.GEMINI_MODEL)
+        response = chat.send_message(prompt)
         text = response.text.strip()
 
         # Loại bỏ markdown code fence nếu LLM trả về ```json

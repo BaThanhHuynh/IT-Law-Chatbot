@@ -13,6 +13,12 @@ from app.core.logger import logger
 from app.services.rag.retriever import get_context_from_results, fetch_specific_article
 from app.services.graphrag.knowledge_graph import hybrid_search
 from app.services.chatbot.prompts import SYSTEM_PROMPT, RAG_PROMPT_TEMPLATE, TITLE_PROMPT, INTENT_CLASSIFICATION_PROMPT, ENTITY_EXTRACTION_PROMPT, MULTI_QUERY_PROMPT, QUERY_REWRITE_PROMPT
+from app.services.memory import (
+    get_short_term_memory,
+    get_long_term_memory,
+    LongTermMemory,
+    MemoryExtractor,
+)
 
 
 # ── Article-Lookup Detection ─────────────────────────────────────────────────
@@ -240,10 +246,8 @@ def classify_intent(query: str) -> str:
     try:
         model = get_llm()
         prompt = INTENT_CLASSIFICATION_PROMPT.format(query=query)
-        response = model.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
-        )
+        chat = model.chats.create(model=Config.GEMINI_MODEL)
+        response = chat.send_message(prompt)
         intent = response.text.strip().upper()
         if "LUAT" in intent:
             return "LUAT"
@@ -251,6 +255,8 @@ def classify_intent(query: str) -> str:
     except Exception as e:
         logger.error(f"[Error] Intent classification failed: {e}")
         return "LUAT"  # Fallback to LUAT
+
+
 @retry_on_503()
 def rewrite_query(query: str, history_context: str) -> str:
     """Viết lại câu hỏi sử dụng ngữ cảnh từ lịch sử."""
@@ -259,10 +265,8 @@ def rewrite_query(query: str, history_context: str) -> str:
     try:
         model = get_llm()
         prompt = QUERY_REWRITE_PROMPT.format(history_context=history_context, query=query)
-        response = model.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
-        )
+        chat = model.chats.create(model=Config.GEMINI_MODEL)
+        response = chat.send_message(prompt)
         rewritten = response.text.strip()
         # Fallback if model refuses or returns empty
         if not rewritten or len(rewritten) < 2:
@@ -279,10 +283,8 @@ def generate_title(query: str) -> str:
     try:
         model = get_llm()
         prompt = TITLE_PROMPT.format(query=query)
-        response = model.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
-        )
+        chat = model.chats.create(model=Config.GEMINI_MODEL)
+        response = chat.send_message(prompt)
         try:
             text = response.text.strip()
             return text if text else "Câu hỏi mới"
@@ -299,10 +301,8 @@ def extract_entities(query: str) -> str:
     try:
         model = get_llm()
         prompt = ENTITY_EXTRACTION_PROMPT.format(query=query)
-        response = model.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
-        )
+        chat = model.chats.create(model=Config.GEMINI_MODEL)
+        response = chat.send_message(prompt)
         try:
             text = response.text.strip()
             return text if text else query
@@ -326,10 +326,8 @@ def generate_sub_queries(query: str, num_queries: int = 3) -> list:
     try:
         model = get_llm()
         prompt = MULTI_QUERY_PROMPT.format(query=query)
-        response = model.models.generate_content(
-            model=Config.GEMINI_MODEL,
-            contents=prompt
-        )
+        chat = model.chats.create(model=Config.GEMINI_MODEL)
+        response = chat.send_message(prompt)
         
         try:
             text = response.text.strip()
@@ -353,16 +351,17 @@ def generate_sub_queries(query: str, num_queries: int = 3) -> list:
 
 
 
-def generate_response(query: str, conversation_id: str = None) -> dict:
+def generate_response(query: str, conversation_id: str = None, user_id: str = "default_user") -> dict:
     """
     Main chatbot pipeline:
-    1. Intent classification
+    1. Fast-Path / Short-Term Memory Check & Intent classification
     2. Entity extraction + Multi-query generation
-    3. Hybrid search (multi-query vector + KG entity + graph traversal)
-    4. Build prompt with context
+    3. Hybrid search (multi-query vector + KG entity + graph traversal) + Long-term memory retrieval
+    4. Build prompt with context & user memory
     5. Call Gemini API
     6. Save to conversation history
-    7. Return response with sources
+    7. Asynchronously extract and store memories in background (0ms latency impact)
+    8. Return response with sources
     """
     # 1. Create conversation if needed
     if not conversation_id:
@@ -370,6 +369,9 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
 
     # 2. Save user message (original query)
     save_message(conversation_id, "user", query)
+
+    short_term = get_short_term_memory()
+    long_term = get_long_term_memory()
 
     # 3. Phân loại intent — Regex trước, LLM sau (tiết kiệm 2-3s cho CHATCHIT)
     import re as _re
@@ -407,15 +409,17 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         if last_bot_msg:
             try:
                 model = get_llm()
-                summary_response = model.models.generate_content(
+                chat = model.chats.create(
                     model=Config.GEMINI_MODEL,
-                    contents=f"Hãy tóm tắt nội dung sau thành 3-5 ý chính, mỗi ý 1-2 câu ngắn gọn, dùng bullet point:\n\n{last_bot_msg[:3000]}",
                     config=types.GenerateContentConfig(
                         system_instruction=(
                             "Bạn là trợ lý pháp luật CNTT. Tóm tắt nội dung luật thành 3-5 ý chính ngắn gọn. "
                             "Giữ lại số điều, khoản quan trọng. Dùng bullet point (•). Không thêm thông tin mới."
                         ),
                     )
+                )
+                summary_response = chat.send_message(
+                    f"Hãy tóm tắt nội dung sau thành 3-5 ý chính, mỗi ý 1-2 câu ngắn gọn, dùng bullet point:\n\n{last_bot_msg[:3000]}"
                 )
                 answer = summary_response.text
             except Exception as e:
@@ -432,22 +436,20 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             "graph_data": {"nodes": [], "edges": []},
         }
     else:
-        # Fetch history once (limit=6) and reuse for both the rewrite context
-        # and the final chat history — avoids a second Qdrant scroll round-trip.
+        # Fetch history once (limit=6)
         history = get_conversation_history(conversation_id, limit=6)
-        
-        # Exclude the current user message (last element) from history context
         prev_history = history[:-1]
-        
-        # Use the last 2 history messages for context
         raw_history = prev_history[-2:]
         history_context = ""
         for msg in raw_history:
             role_name = "User" if msg["role"] == "user" else "Bot"
             history_context += f"{role_name}: {msg['content']}\n"
 
-        # If we have history, rewrite the query first to get the correct context for classification & extraction
-        if history_context.strip():
+        # Fast-Path Check on Short-Term Working Memory to avoid expensive LLM rewrite
+        if short_term.is_follow_up_query(query, conversation_id):
+            rewritten_query = short_term.build_fast_path_query(query, conversation_id)
+            logger.info(f"[{conversation_id}] Fast-Path Short-Term memory applied: '{query}' -> '{rewritten_query}' (Bypassed LLM rewrite)")
+        elif history_context.strip():
             rewritten_query = rewrite_query(query, history_context)
         else:
             rewritten_query = query
@@ -464,8 +466,6 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         logger.info(f"[{conversation_id}] Query classified as: {intent}")
 
     if intent == "CHATCHIT":
-        # ═══ CHATCHIT MODE: Đường tắt tối đa ═══
-        # Bỏ qua: rewrite, entities, sub-queries, RAG, Graph, chat history nặng
         search_results = {"vector_results": []}
         graph_data = {"nodes": [], "edges": []}
 
@@ -476,16 +476,15 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
             "Yêu cầu chung: Trả lời THẬT NGĂN GỌN (tối đa 2 câu), không liệt kê, không giải thích dài dòng."
         )
 
-        # Gọi LLM trực tiếp (không tạo chat session, không load history đầy đủ)
         try:
             model = get_llm()
-            chatchit_response = model.models.generate_content(
+            chat = model.chats.create(
                 model=Config.GEMINI_MODEL,
-                contents=query,
                 config=types.GenerateContentConfig(
                     system_instruction=chatchit_system,
                 )
             )
+            chatchit_response = chat.send_message(query)
             answer = chatchit_response.text
         except Exception as e:
             logger.error(f"[Error] CHATCHIT LLM failed: {e}")
@@ -501,11 +500,8 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         }
 
     # ═══ LUAT MODE: Full pipeline ═══
-    # Cả 4 LLM call đã được chạy song song phía trên.
-
     if rewritten_query != query:
         logger.info(f"[{conversation_id}] Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
-        # sub_queries sinh từ câu gốc → thêm câu đã rewrite để giữ recall cho câu hỏi nối tiếp
         if rewritten_query not in sub_queries:
             sub_queries = [rewritten_query] + sub_queries
 
@@ -522,7 +518,7 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
 
         # ── Article-Lookup: exact metadata fetch for "Điều X Luật Y" queries ──
         _inject_article_lookup(rewritten_query, search_results)
-        _inject_article_lookup(query, search_results)  # also try original query
+        _inject_article_lookup(query, search_results)
 
         graph_data = search_results.get("graph_data", {"nodes": [], "edges": []})
         rag_context = get_context_from_results(search_results["vector_results"])
@@ -534,6 +530,24 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         graph_context = ""
         graph_data = {"nodes": [], "edges": []}
         search_results = {"vector_results": []}
+
+    # ── Retrieve Long-Term Memory Context (Mem0-style) ──
+    memory_section = ""
+    if Config.ENABLE_MEMORY:
+        try:
+            user_memories = long_term.search_memories(query=rewritten_query, user_id=user_id, limit=3)
+            memory_lines = []
+            session_state = short_term.get_state(conversation_id)
+            if session_state and session_state.user_role:
+                memory_lines.append(f"- [Vai trò người dùng trong phiên này] {session_state.user_role}")
+            if user_memories:
+                memory_lines.append(LongTermMemory.format_memories_for_prompt(user_memories))
+            if memory_lines:
+                memory_context_str = "\n".join(memory_lines)
+                memory_section = f"\n### 3. Thông tin & Ngữ cảnh người dùng (User Memory Context):\n{memory_context_str}\n"
+                logger.info(f"[{conversation_id}] Injected {len(memory_lines)} memory items into prompt.")
+        except Exception as e:
+            logger.warning(f"[Memory] Failed to retrieve memory context: {e}")
 
     # ── Auto-inject Điều 4 NĐ 15/2020 (quy tắc phạt cá nhân = 1/2 tổ chức) ──
     import re as _re_ctx
@@ -561,10 +575,11 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
     prompt = RAG_PROMPT_TEMPLATE.format(
         rag_context=rag_context,
         graph_context=graph_context,
+        memory_section=memory_section,
         query=rewritten_query,
     )
 
-    # 4. Reuse the conversation history fetched above (no second Qdrant scroll).
+    # 4. Reuse the conversation history fetched above
     chat_history = []
     for msg in history[:-1]:  # Exclude the current user message
         chat_history.append(
@@ -576,7 +591,6 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
 
     # 5. Generate Response using Gemini API
     try:
-        # Check for MOCK mode
         if query.strip().lower().startswith("/mock"):
             logger.info("MOCK mode activated. Bypassing Gemini API.")
             answer = "Dữ liệu tìm thấy từ CSDL (Mock Mode):\n\n" + rag_context
@@ -590,7 +604,6 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
                 )
             )
             
-            # Inline retry logic for the main response generation
             max_retries = 3
             delay = 2
             for attempt in range(max_retries):
@@ -611,12 +624,11 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         logger.error(f"[Error] LLM generation failed: {e}")
         answer = f"Hiện tại máy chủ đang quá tải. Xin vui lòng thử lại sau giây lát."
 
-    # 6. Build sources list (calibrate raw scores to user-friendly confidence)
+    # 6. Build sources list
     from app.services.rag.embeddings import calibrate_score
     all_candidates = []
-    seen_articles = set()     # (doc_title, article) -> avoid exact duplicate articles
+    seen_articles = set()
 
-    # Gather all unique articles from vector search results
     for r in search_results.get("vector_results", []):
         if r.get("score", 0) < 0.35:
             continue
@@ -634,11 +646,9 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
                 "dieu_so": r.get("dieu_so", ""),
             })
 
-    # Gather sources from Graph DB (Neo4j)
     for r in search_results.get("matched_entities", [])[:2]:
         entity = r.get("entity", {})
         real_score = r.get("score", 0)
-        # Only include relevant entities (score >= 0.35) of legal types
         if real_score >= 0.35 and entity.get("entity_type") in ["DIEU_LUAT", "VAN_BAN"]:
             article_key = ("Mạng Lưới Tri Thức (GraphRAG)", entity.get("name", ""))
             if article_key not in seen_articles:
@@ -653,16 +663,13 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
                     "dieu_so": "",
                 })
 
-    # Filter candidates by actual citations in the answer
     filtered_candidates = _filter_sources_by_citations(answer, all_candidates)
 
-    # Apply diversity-aware top-k selection on filtered candidates
     MAX_SOURCES = Config.TOP_K_RESULTS
     sources = []
     seen_doc_titles = set()
     seen_articles_final = set()
 
-    # Pass 1: one best chunk per unique document among filtered candidates
     for s in filtered_candidates:
         doc = s.get("doc_title", "")
         article_key = (doc, s.get("article", ""))
@@ -673,7 +680,6 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
         if len(sources) >= MAX_SOURCES:
             break
 
-    # Pass 2: fill remaining slots with next-best unique articles among filtered candidates
     if len(sources) < MAX_SOURCES:
         for s in filtered_candidates:
             article_key = (s.get("doc_title", ""), s.get("article", ""))
@@ -685,6 +691,15 @@ def generate_response(query: str, conversation_id: str = None) -> dict:
 
     # 7. Save assistant message
     save_message(conversation_id, "assistant", answer, sources)
+
+    # 8. Asynchronously extract and store memories in background (0ms latency)
+    MemoryExtractor.dispatch_extract_and_store(
+        query=query,
+        answer=answer,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        sources=sources,
+    )
 
     return {
         "conversation_id": conversation_id,
@@ -931,7 +946,7 @@ def get_all_conversations() -> list:
         return []
 
 
-def generate_response_stream(query: str, conversation_id: str = None):
+def generate_response_stream(query: str, conversation_id: str = None, user_id: str = "default_user"):
     """
     Main chatbot streaming pipeline.
     Yields events in dictionary format:
@@ -946,6 +961,9 @@ def generate_response_stream(query: str, conversation_id: str = None):
 
     # 2. Save user message (original query)
     save_message(conversation_id, "user", query)
+
+    short_term = get_short_term_memory()
+    long_term = get_long_term_memory()
 
     # 3. Phân loại intent — Regex trước, LLM sau (tiết kiệm 2-3s cho CHATCHIT)
     import re as _re
@@ -973,11 +991,9 @@ def generate_response_stream(query: str, conversation_id: str = None):
         logger.info(f"[{conversation_id}] (Stream) Query fast-classified as: TOMTAT (regex)")
 
     if intent == "TOMTAT":
-        # Stream summary response
         # Send initial metadata
         yield {"event": "metadata", "conversation_id": conversation_id, "graph_data": {"nodes": [], "edges": []}}
         
-        # Get last bot message
         recent_history = get_conversation_history(conversation_id, limit=4)
         last_bot_msg = ""
         for msg in reversed(recent_history):
@@ -988,15 +1004,17 @@ def generate_response_stream(query: str, conversation_id: str = None):
         if last_bot_msg:
             try:
                 model = get_llm()
-                summary_response = model.models.generate_content_stream(
+                chat = model.chats.create(
                     model=Config.GEMINI_MODEL,
-                    contents=f"Hãy tóm tắt nội dung sau thành 3-5 ý chính, mỗi ý 1-2 câu ngắn gọn, dùng bullet point:\n\n{last_bot_msg[:3000]}",
                     config=types.GenerateContentConfig(
                         system_instruction=(
                             "Bạn là trợ lý pháp luật CNTT. Tóm tắt nội dung luật thành 3-5 ý chính ngắn gọn. "
                             "Giữ lại số điều, khoản quan trọng. Dùng bullet point (•). Không thêm thông tin mới."
                         ),
                     )
+                )
+                summary_response = chat.send_message_stream(
+                    f"Hãy tóm tắt nội dung sau thành 3-5 ý chính, mỗi ý 1-2 câu ngắn gọn, dùng bullet point:\n\n{last_bot_msg[:3000]}"
                 )
                 full_answer = ""
                 for chunk in summary_response:
@@ -1019,22 +1037,19 @@ def generate_response_stream(query: str, conversation_id: str = None):
         return
 
     if intent == "LUAT":
-        # Fetch history once (limit=6) and reuse for both the rewrite context
-        # and the final chat history — avoids a second Qdrant scroll round-trip.
         history = get_conversation_history(conversation_id, limit=6)
-        
-        # Exclude the current user message (last element) from history context
         prev_history = history[:-1]
-        
-        # Use the last 2 history messages for context
         raw_history = prev_history[-2:]
         history_context = ""
         for msg in raw_history:
             role_name = "User" if msg["role"] == "user" else "Bot"
             history_context += f"{role_name}: {msg['content']}\n"
 
-        # If we have history, rewrite the query first to get the correct context for classification & extraction
-        if history_context.strip():
+        # Fast-Path Check on Short-Term Working Memory to avoid expensive LLM rewrite
+        if short_term.is_follow_up_query(query, conversation_id):
+            rewritten_query = short_term.build_fast_path_query(query, conversation_id)
+            logger.info(f"[{conversation_id}] (Stream) Fast-Path Short-Term memory applied: '{query}' -> '{rewritten_query}' (Bypassed LLM rewrite)")
+        elif history_context.strip():
             rewritten_query = rewrite_query(query, history_context)
         else:
             rewritten_query = query
@@ -1062,13 +1077,13 @@ def generate_response_stream(query: str, conversation_id: str = None):
 
         try:
             model = get_llm()
-            chatchit_response = model.models.generate_content_stream(
+            chat = model.chats.create(
                 model=Config.GEMINI_MODEL,
-                contents=query,
                 config=types.GenerateContentConfig(
                     system_instruction=chatchit_system,
                 )
             )
+            chatchit_response = chat.send_message_stream(query)
             full_answer = ""
             for chunk in chatchit_response:
                 text = chunk.text or ""
@@ -1086,14 +1101,11 @@ def generate_response_stream(query: str, conversation_id: str = None):
         return
 
     # ═══ LUAT MODE: Full pipeline ═══
-    # Cả 4 LLM call đã được chạy song song phía trên.
-
     if rewritten_query != query:
         logger.info(f"[{conversation_id}] (Stream) Query rewritten:\n  Original: {query}\n  Rewritten: {rewritten_query}")
         if rewritten_query not in sub_queries:
             sub_queries = [rewritten_query] + sub_queries
 
-    # Import hybrid_search inside function to avoid circular import issues
     from app.services.graphrag.knowledge_graph import hybrid_search
     try:
         logger.info(f"[{conversation_id}] (Stream) Extracted entities: {extracted_entities}")
@@ -1107,7 +1119,7 @@ def generate_response_stream(query: str, conversation_id: str = None):
 
         # ── Article-Lookup: exact metadata fetch for "Điều X Luật Y" queries ──
         _inject_article_lookup(rewritten_query, search_results)
-        _inject_article_lookup(query, search_results)  # also try original query
+        _inject_article_lookup(query, search_results)
 
         graph_data = search_results.get("graph_data", {"nodes": [], "edges": []})
         rag_context = get_context_from_results(search_results["vector_results"])
@@ -1119,6 +1131,24 @@ def generate_response_stream(query: str, conversation_id: str = None):
         graph_context = ""
         graph_data = {"nodes": [], "edges": []}
         search_results = {"vector_results": []}
+
+    # ── Retrieve Long-Term Memory Context (Mem0-style) ──
+    memory_section = ""
+    if Config.ENABLE_MEMORY:
+        try:
+            user_memories = long_term.search_memories(query=rewritten_query, user_id=user_id, limit=3)
+            memory_lines = []
+            session_state = short_term.get_state(conversation_id)
+            if session_state and session_state.user_role:
+                memory_lines.append(f"- [Vai trò người dùng trong phiên này] {session_state.user_role}")
+            if user_memories:
+                memory_lines.append(LongTermMemory.format_memories_for_prompt(user_memories))
+            if memory_lines:
+                memory_context_str = "\n".join(memory_lines)
+                memory_section = f"\n### 3. Thông tin & Ngữ cảnh người dùng (User Memory Context):\n{memory_context_str}\n"
+                logger.info(f"[{conversation_id}] (Stream) Injected {len(memory_lines)} memory items into prompt.")
+        except Exception as e:
+            logger.warning(f"[Memory] (Stream) Failed to retrieve memory context: {e}")
 
     import re as _re_ctx
     _PENALTY_KEYWORDS = _re_ctx.compile(
@@ -1143,10 +1173,11 @@ def generate_response_stream(query: str, conversation_id: str = None):
     prompt = RAG_PROMPT_TEMPLATE.format(
         rag_context=rag_context,
         graph_context=graph_context,
+        memory_section=memory_section,
         query=rewritten_query,
     )
 
-    # Reuse the history fetched above (no second Qdrant scroll).
+    # Reuse the history fetched above
     chat_history = []
     for msg in history[:-1]:  # Exclude the current user message
         chat_history.append(
@@ -1176,7 +1207,6 @@ def generate_response_stream(query: str, conversation_id: str = None):
                 )
             )
             
-            # Inline retry logic for the main response generation
             max_retries = 3
             delay = 2
             for attempt in range(max_retries):
@@ -1269,6 +1299,15 @@ def generate_response_stream(query: str, conversation_id: str = None):
 
     # Save to history
     save_message(conversation_id, "assistant", full_answer, sources)
+
+    # Asynchronously extract and store memories in background (0ms latency)
+    MemoryExtractor.dispatch_extract_and_store(
+        query=query,
+        answer=full_answer,
+        conversation_id=conversation_id,
+        user_id=user_id,
+        sources=sources,
+    )
 
     # Yield sources & done
     yield {"event": "sources", "sources": sources}

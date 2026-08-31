@@ -28,7 +28,8 @@ async def chat(request: ChatRequest):
         raise HTTPException(status_code=400, detail="Vui lòng nhập câu hỏi.")
 
     try:
-        result = generate_response(request.message, request.conversation_id)
+        user_id = request.user_id or "default_user"
+        result = generate_response(request.message, request.conversation_id, user_id=user_id)
         return {
             "success": True,
             "data": {
@@ -48,9 +49,11 @@ async def chat_stream(request: ChatRequest):
     if not request.message:
         raise HTTPException(status_code=400, detail="Vui lòng nhập câu hỏi.")
 
+    user_id = request.user_id or "default_user"
+
     async def event_generator():
         try:
-            for chunk in generate_response_stream(request.message, request.conversation_id):
+            for chunk in generate_response_stream(request.message, request.conversation_id, user_id=user_id):
                 yield f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"[SSE Error] Stream failed: {e}", exc_info=True)

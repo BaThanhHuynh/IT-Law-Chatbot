@@ -103,7 +103,7 @@ RAG_PROMPT_TEMPLATE = """Dưới đây là tài liệu tham khảo (Context) l�
 Phần này cho biết MỐI LIÊN HỆ giữa các điều luật trong Phần 1 (điều nào thuộc văn bản nào, liên quan đến điều nào).
 Dùng thông tin này để giải thích BỐI CẢNH và MỐI LIÊN KẾT, KHÔNG dùng để trích dẫn nội dung mới ngoài Phần 1.
 {graph_context}
-
+{memory_section}
 ---
 Câu hỏi của khách hàng: {query}
 """
